@@ -4,6 +4,7 @@ import albumentations
 import PIL
 import numpy as np
 import torchvision.transforms.functional as TF
+from torchvision import transforms
 from omegaconf import OmegaConf
 from functools import partial
 from PIL import Image
@@ -159,7 +160,7 @@ class DatasetVal(Dataset):
                  dataset_name='openimages',
                  size=None,
                  degradation=None, downscale_f=4, min_crop_f=0.5, max_crop_f=1.,
-                 random_crop=True):
+                 random_crop=True, eval_preprocessing=False):
         
         if dataset_name == "openimages":
             rel_paths = _list_image_paths(val_dir)
@@ -184,6 +185,14 @@ class DatasetVal(Dataset):
         self.max_crop_f = max_crop_f
         assert(max_crop_f <= 1.)
         self.center_crop = not random_crop
+        self.eval_preprocessing = eval_preprocessing
+        self.eval_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize(size),
+            transforms.CenterCrop(size),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5],
+                                 std=[0.5, 0.5, 0.5]),
+        ])
 
         self.image_rescaler = albumentations.SmallestMaxSize(max_size=size, interpolation=cv2.INTER_AREA)
 
@@ -228,6 +237,17 @@ class DatasetVal(Dataset):
 
         if not image.mode == "RGB":
             image = image.convert("RGB")
+
+        if self.eval_preprocessing:
+            image = self.eval_transform(image)
+            LR_image = TF.resize(
+                image,
+                [self.LR_size, self.LR_size],
+                interpolation=transforms.InterpolationMode.NEAREST,
+            )
+            example["image"] = image.permute(1, 2, 0).numpy().astype(np.float32)
+            example["LR_image"] = LR_image.permute(1, 2, 0).numpy().astype(np.float32)
+            return example
 
         image = np.array(image).astype(np.uint8)
 

@@ -14,8 +14,11 @@ from PIL import Image
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
+from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
+from torchmetrics.functional.image.ssim import structural_similarity_index_measure
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 from ldm.util import instantiate_from_config
 
@@ -271,6 +274,146 @@ class SetupCallback(Callback):
                     os.rename(self.logdir, dst)
                 except FileNotFoundError:
                     pass
+
+
+class ReconstructionMetricsCallback(Callback):
+    """Compute full-validation reconstruction metrics without writing images to disk."""
+
+    def __init__(self, log_filename="eval.log"):
+        super().__init__()
+        self.log_filename = log_filename
+        self.fid = None
+        self.real_features_cached = False
+        self.metric_sums = None
+        self.num_samples = None
+
+    def on_validation_epoch_start(self, trainer, pl_module):
+        if self.fid is None:
+            # Keep real-image statistics across validation runs. The metric lives
+            # on the callback so its Inception weights are not saved in model ckpts.
+            self.fid = FrechetInceptionDistance(
+                feature=2048,
+                reset_real_features=False,
+                normalize=False,
+            ).to(pl_module.device)
+        else:
+            self.fid.to(pl_module.device)
+
+        self.metric_sums = torch.zeros(3, dtype=torch.float64, device=pl_module.device)
+        self.num_samples = torch.zeros((), dtype=torch.long, device=pl_module.device)
+
+    @torch.no_grad()
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+        if not isinstance(outputs, dict):
+            return
+        inputs = outputs.get("inputs")
+        reconstructions = outputs.get("reconstructions")
+        if inputs is None or reconstructions is None:
+            return
+
+        # Match eval.py's conversion from [-1, 1] tensors to image pixels.
+        real_uint8 = torch.clamp(127.5 * inputs + 128.0, 0, 255).to(torch.uint8)
+        fake_uint8 = torch.clamp(127.5 * reconstructions + 128.0, 0, 255).to(torch.uint8)
+
+        if not self.real_features_cached:
+            self.fid.update(real_uint8, real=True)
+        self.fid.update(fake_uint8, real=False)
+
+        batch_size = inputs.shape[0]
+        squared_error = (
+            real_uint8.to(torch.float32) - fake_uint8.to(torch.float32)
+        ).pow(2).flatten(1).mean(1)
+        psnr = 20.0 * torch.log10(255.0 / torch.sqrt(squared_error.clamp_min(1e-12)))
+
+        lpips = pl_module.loss.perceptual_loss(
+            inputs.contiguous(), reconstructions.contiguous()
+        ).reshape(batch_size, -1).mean(1)
+        ssim = structural_similarity_index_measure(
+            reconstructions.float(),
+            inputs.float(),
+            data_range=2.0,
+            reduction="none",
+        )
+
+        self.metric_sums += torch.stack([
+            psnr.sum(),
+            lpips.to(torch.float64).sum(),
+            ssim.to(torch.float64).sum(),
+        ])
+        self.num_samples += batch_size
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if self.fid is None or self.num_samples is None:
+            return
+
+        fid = self.fid.compute()
+        metric_sums = trainer.strategy.reduce(self.metric_sums, reduce_op="sum")
+        num_samples = trainer.strategy.reduce(self.num_samples, reduce_op="sum")
+        averages = metric_sums / num_samples.clamp_min(1)
+
+        metrics = {
+            "val/fid": fid,
+            "val/psnr": averages[0].to(torch.float32),
+            "val/lpips": averages[1].to(torch.float32),
+            "val/ssim": averages[2].to(torch.float32),
+        }
+        pl_module.log_dict(
+            metrics,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=False,
+        )
+
+        if trainer.is_global_zero:
+            logdir = getattr(trainer, "logdir", trainer.default_root_dir)
+            log_path = os.path.join(logdir, self.log_filename)
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(
+                    "{} step={} epoch={} samples={} "
+                    "FID={:.6f} PSNR={:.6f} LPIPS={:.6f} SSIM={:.6f}\n".format(
+                        datetime.datetime.now().isoformat(timespec="seconds"),
+                        trainer.global_step,
+                        trainer.current_epoch,
+                        int(num_samples.item()),
+                        metrics["val/fid"].item(),
+                        metrics["val/psnr"].item(),
+                        metrics["val/lpips"].item(),
+                        metrics["val/ssim"].item(),
+                    )
+                )
+
+        self.real_features_cached = True
+        self.fid.reset()
+
+
+class TrainOnlyTQDMProgressBar(TQDMProgressBar):
+    """Keep the training progress bar while suppressing validation tqdm output."""
+
+    def init_validation_tqdm(self):
+        bar = super().init_validation_tqdm()
+        bar.disable = True
+        return bar
+
+    def get_metrics(self, trainer, pl_module):
+        all_metrics = super().get_metrics(trainer, pl_module)
+        metrics = {"gstep": trainer.global_step}
+        if trainer.optimizers:
+            metrics["lr"] = trainer.optimizers[0].param_groups[0]["lr"]
+
+        display_names = {
+            "train/ae_loss": "ae",
+            "train/disc_loss": "disc",
+            "train/pixel_loss": "rec",
+            "train/lpips_loss": "lpips",
+            "train/weighted_g_loss": "gan",
+            "train/weighted_kl_loss": "kl",
+        }
+        for source_name, display_name in display_names.items():
+            if source_name in all_metrics:
+                metrics[display_name] = all_metrics[source_name]
+        return metrics
 
 
 class ImageLogger(Callback):

@@ -31,7 +31,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 40
+    batch_size: 20
     wrap: True
     train:
       target: ldm.data.dataset.DatasetTrain
@@ -47,6 +47,7 @@ data:
         dataset_name: imagenet
         size: 256
         degradation: pil_nearest
+        eval_preprocessing: true
 
 
 
@@ -81,7 +82,26 @@ lightning:
         batch_frequency: 1000
         max_images: 8
         increase_log_steps: True
+    reconstruction_metrics:
+      target: main.ReconstructionMetricsCallback
+    progress_bar:
+      target: main.TrainOnlyTQDMProgressBar
+      params:
+        refresh_rate: 100
+
+  modelcheckpoint:
+    target: pytorch_lightning.callbacks.ModelCheckpoint
+    params:
+      filename: "{step:09}"
+      monitor: "val/fid"
+      mode: min
+      save_top_k: 5
+      save_last: true
+      save_on_train_epoch_end: false
 
   trainer:
     benchmark: True
     accumulate_grad_batches: 1
+    val_check_interval: 2000
+    num_sanity_val_steps: 0
+    log_every_n_steps: 100

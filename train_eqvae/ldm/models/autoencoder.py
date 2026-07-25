@@ -159,9 +159,12 @@ class AutoencoderKL(pl.LightningModule):
             aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")
 
-
-            self.log(f"aeloss_scale-{scale}-{mode}", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+            scale_value = torch.as_tensor(scale, device=self.device).float().mean()
+            self.log("train/ae_loss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+            self.log("train/ae_scale", scale_value, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+            self.log("train/ae_latent", float(mode == "latent"), prog_bar=False, logger=True,
+                     on_step=True, on_epoch=False)
+            self.log_dict(log_dict_ae, prog_bar=True, logger=True, on_step=True, on_epoch=False)
             return aeloss
 
         if optimizer_idx == 1:
@@ -169,8 +172,10 @@ class AutoencoderKL(pl.LightningModule):
             discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
                                                 last_layer=self.get_last_layer(), split="train")
 
-
-            self.log(f"discloss_scale-{scale}-{mode}", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+            scale_value = torch.as_tensor(scale, device=self.device).float().mean()
+            self.log("train/disc_scale", scale_value, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+            self.log("train/disc_latent", float(mode == "latent"), prog_bar=False, logger=True,
+                     on_step=True, on_epoch=False)
             self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
             return discloss
 
@@ -186,7 +191,10 @@ class AutoencoderKL(pl.LightningModule):
         self.log("val/rec_loss", log_dict_ae["val/rec_loss"])
         self.log_dict(log_dict_ae)
         self.log_dict(log_dict_disc)
-        return self.log_dict
+        return {
+            "inputs": inputs.detach(),
+            "reconstructions": reconstructions.detach(),
+        }
 
     def configure_optimizers(self):
         lr = self.learning_rate
