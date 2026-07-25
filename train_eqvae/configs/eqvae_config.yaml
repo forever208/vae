@@ -1,6 +1,6 @@
 model:
   base_learning_rate: 4.5e-6
-  target: ldm.models.autoencoder.AutoencoderKL
+  target: models.vae.AutoencoderKL
   params:
     embed_dim: 4
     anisotropic: false
@@ -8,7 +8,7 @@ model:
     p_prior: 0.0
     p_prior_s: 0.0
     lossconfig:
-      target: ldm.modules.losses.LPIPSWithDiscriminator
+      target: losses.vae_loss.LPIPSWithDiscriminator
       params:
         disc_start: 0
         kl_weight: 0.000001
@@ -28,14 +28,14 @@ model:
 data:
   batch_size: 20
   train:
-    target: ldm.data.dataset.DatasetTrain
+    target: data.datasets.DatasetTrain
     params:
       train_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train"
       dataset_name: imagenet
       size: 256
       degradation: pil_nearest
   validation:
-    target: ldm.data.dataset.DatasetVal
+    target: data.datasets.DatasetVal
     params:
       val_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val"
       dataset_name: imagenet
@@ -84,7 +84,7 @@ pytorch_training:
     resume_path: "pretrained_models/model.ckpt"
     resume_optimizer: true
     strict_model_load: false
-    output_dir: "/home/ningmang/eqvae/exps/imagenet256_SDVAE_PyTorch"
+    output_dir: "/home/ningmang/eqvae/exps/imagenet256_SDVAE_torch"
     directory: "checkpoints"
     monitor: "val/fid"
     mode: "min"

@@ -1,4 +1,4 @@
-name: eqvae
+name: diffusion
 channels:
   - pytorch
   - nvidia
@@ -14,4 +14,4 @@ dependencies:
     - pytorch_lightning
     - omegaconf
     - einops
-    - -e git+https://github.com/CompVis/taming-transformers.git@3ba01b241669f5ade541ce990f7650a3b8f65318#egg=taming_transformers
+    - -e ./train_eqvae

@@ -77,7 +77,7 @@ We provide a training script to finetune [SD-VAE](https://ommer-lab.com/files/la
 ### 3. Evaluate Reconstruction 
 To evaluate the reconstruction of EQ-VAE, calculate rFID, LPIPS, SSIM and PSNR on a validation set (we use Imagenet Validation in our paper) with the following:
 ```bash
-torchrun --nproc_per_node=8 eval.py \
+torchrun --nproc_per_node=8 train_eqvae/evaluation/eval.py \
   --data_path /path/to/imagenet/validation \
   --output_path results \
   --ckpt_path /path/to/your/ckpt

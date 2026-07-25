@@ -1,0 +1,6 @@
+.vscode/
+exps/
+__pycache__
+latent_diffusion.egg-info/
+*.ckpt
+*.pth

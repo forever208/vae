@@ -1,53 +1,260 @@
+# EQ-VAE training
+
+This directory contains the self-contained PyTorch implementation for training
+and evaluating the first-stage EQ-VAE. It supports single-GPU execution and
+multi-GPU DistributedDataParallel (DDP) training.
 
 ### 1. Environment setup
+
+Run the setup command from this directory because `environment.yaml` installs
+the local project in editable mode:
+
 ```bash
+cd train_eqvae
 conda env create -f environment.yaml
 conda activate eqvae_train
-pip install packaging==21.3
-pip install 'torchmetrics<0.8'
-pip install transformers==4.10.2
-pip install torch==1.7.0+cu110 torchvision==0.8.1+cu110 torchaudio==0.7.0 -f https://download.pytorch.org/whl/torch_stable.html
-pip install Pillow==9.5.0
 ```
 
+The small `taming-transformers` subset needed by LPIPS and PatchGAN is already
+integrated into `losses/` and `models/`; no nested Git checkout is required.
+The repository-level `environment.yml` is a separate environment and is not
+the environment used by this trainer.
 
 ### 2. Download SD-VAE
-To download the SD-VAE from the official LDM repository run:
 
+Download the SD-VAE checkpoint from the official LDM repository:
 
 ```bash
 bash download_sdvae.sh
 ```
 
-
+The script places the checkpoint at `pretrained_models/model.ckpt`. LPIPS
+downloads its VGG weights to `pretrained_models/vgg.pth` automatically on the
+first run if they are not already present.
 
 ### 3. Dataset
 
-#### Dataset download
+The data loader supports both
+[ImageNet](https://www.image-net.org/) and
+[OpenImages](https://storage.googleapis.com/openimages/web/index.html).
 
-Currently, we provide experiments for [OpenImages](https://storage.googleapis.com/openimages/web/index.html). After downloading modify paths of train_dir, val_dir, dataset_name in the [cofig file](configs/eqvae_config.yaml)
+- `dataset_name: imagenet` recursively scans class subdirectories.
+- `dataset_name: openimages` scans images directly under the configured
+  directory.
+- Supported image extensions are `.jpg`, `.jpeg`, `.png`, `.bmp`, and `.webp`.
 
+After downloading the dataset, update the following entries in
+`configs/eqvae_config.yaml`:
 
+```yaml
+data:
+  train:
+    params:
+      train_dir: /path/to/train
+      dataset_name: imagenet
+  validation:
+    params:
+      val_dir: /path/to/validation
+      dataset_name: imagenet
+```
 
-
-
-
-
-
+The default pipeline produces a normalized full-resolution `image` and a
+downsampled `LR_image`. The current EQ-VAE training path consumes `image`;
+`LR_image` remains available for degradation-based experiments. Available
+degradations include PIL/OpenCV interpolation, `bsrgan`, and `bsrgan_light`.
 
 ### 4. Training
 
-To run EQ-VAE regularization on 8 GPUs:
+#### 4.1 Configure the run
+
+Before launching training, review `configs/eqvae_config.yaml` and set:
+
+- `data.train.params.train_dir` and
+  `data.validation.params.val_dir`
+- `data.*.params.dataset_name` to `imagenet` or `openimages`
+- `pytorch_training.checkpoint.output_dir`
+- `pytorch_training.checkpoint.resume_path`
+
+`stage1_vae_trainer.py` is the main entry point. It loads the complete YAML
+configuration, initializes the distributed context, builds the model and its
+two optimizers, restores a checkpoint, creates the data loaders, and starts
+the training loop.
+
+#### 4.2 Single-GPU training
+
+From the `train_eqvae` directory:
 
 ```bash
-bash imagenet256_EQVAE_pytorch_ddp.sh
+conda activate eqvae_train
+CUDA_VISIBLE_DEVICES=0 python stage1_vae_trainer.py \
+  --config configs/eqvae_config.yaml
 ```
 
-All model, data, validation, logging, distributed, and checkpoint options live in `configs/eqvae_config.yaml`.
-For one GPU, run `bash imagenet256_EQVAE_pytorch_single_gpu.sh`.
+#### 4.3 Multi-GPU training
 
-- `anisotropic`: If `True` will do anisotropic scaling 
-- `uniform_sample_scale`: If `True` will sample scale factors uniformly from `[0.25, 1)` if set to `False` will randomly choose from scales from `{0.25, 0.5, 0.75}`.
-- `p_prior`: Probability of the latent equivariance branch.
-- `p_prior_s`: Probability of low-resolution prior preservation inside the image branch.
+The provided launcher starts an eight-GPU local DDP job:
+
+```bash
+bash imagenet256_EQVAE.sh
+```
+
+Before using it on another machine, update its hard-coded Conda, repository,
+cache, and output paths. The equivalent portable command is:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+torchrun --standalone --nproc_per_node=8 --master_port=29507 \
+  stage1_vae_trainer.py --config configs/eqvae_config.yaml
+```
+
+`torchrun` provides `RANK`, `LOCAL_RANK`, and `WORLD_SIZE`; the trainer uses
+these values to initialize NCCL, select one CUDA device per process, and add a
+`DistributedSampler` to each data loader.
+
+#### 4.4 Optimization and step semantics
+
+Each batch performs two passes:
+
+1. Update the autoencoder using reconstruction, LPIPS, KL, and adaptive
+   adversarial losses.
+2. Update the PatchGAN discriminator.
+
+`local_step` increases once per batch. `global_step` increases after each
+optimizer update, so with `accumulate_grad_batches: 1` it normally increases
+twice per batch. Logging and validation intervals are expressed in
+`local_step`.
+
+When `scale_learning_rate: true`, the effective learning rate is:
+
+```text
+base_learning_rate × batch_size × world_size × accumulate_grad_batches
+```
+
+With the default configuration this is `9e-5` on one GPU and `7.2e-4` on
+eight GPUs. The current trainer executes in FP32; the `precision` configuration
+field is reserved and does not currently enable automatic mixed precision.
+
+#### 4.5 EQ-VAE-specific options
+
+- `anisotropic`: independently samples height and width scales in the latent
+  equivariance branch when enabled.
+- `p_prior`: probability of using the latent equivariance branch. A value of
+  `0.0` disables that branch.
+- `p_prior_s`: probability of resizing the input in the normal image branch.
+  A value of `0.0` disables this low-resolution prior.
+- Scale factors are currently sampled from
+  `{0.25, 0.28125, ..., 0.96875}`.
+- `uniform_sample_scale` is retained for configuration compatibility but is
+  not currently used by the sampling implementation.
+- `lossconfig.params.kl_weight`, `disc_weight`, and `disc_start` control the
+  KL term, adversarial weight, and discriminator start step.
+
+#### 4.6 Validation, outputs, and checkpoints
+
+Validation runs every
+`pytorch_training.validation.interval_local_steps` batches and computes FID,
+PSNR, LPIPS, and SSIM over the validation set. Rank 0 writes all persistent
+outputs:
+
+```text
+<output_dir>/
+├── resolved_config.yaml
+├── train_metrics.jsonl
+├── eval.log
+├── <local_step>.png
+└── checkpoints/
+    ├── last.pt
+    ├── topk.json
+    └── step_<global_step>.pt
+```
+
+The checkpoint manager keeps `save_top_k` checkpoints according to
+`checkpoint.monitor` and `checkpoint.mode`, in addition to `last.pt` when
+`save_last` is enabled. The eight-GPU shell launcher also writes timestamped
+stdout and stderr logs under `<output_dir>/logs/`.
+
+#### 4.7 Starting from pretrained weights or resuming
+
+To initialize from a weights-only checkpoint, disable optimizer restoration:
+
+```yaml
+pytorch_training:
+  checkpoint:
+    resume_path: pretrained_models/model.ckpt
+    resume_optimizer: false
+    strict_model_load: false
+```
+
+To continue a previous EQ-VAE run, restore `last.pt` and both optimizer states:
+
+```yaml
+pytorch_training:
+  checkpoint:
+    resume_path: /path/to/output/checkpoints/last.pt
+    resume_optimizer: true
+    strict_model_load: false
+```
+
+Set `resume_path` to `null` to train without loading a checkpoint. Checkpoints
+restore the model, optimizer states (when requested), `global_step`, epoch, and
+Top-K metadata. The validation `local_step` schedule restarts from zero after
+resume.
+
+### 5. Repository structure and implementation details
+
+```text
+train_eqvae/
+├── configs/
+│   └── eqvae_config.yaml       # Complete model, data, and trainer config
+├── core/
+│   └── config.py               # Dynamic target-based object construction
+├── data/
+│   ├── datasets.py             # ImageNet/OpenImages datasets
+│   └── degradation/            # BSRGAN and interpolation degradations
+├── models/
+│   ├── vae.py                  # AutoencoderKL and EQ-VAE train branches
+│   ├── backbone.py             # Encoder and decoder
+│   ├── discriminator.py        # PatchGAN discriminator
+│   └── distributions.py        # Diagonal Gaussian posterior
+├── losses/
+│   ├── vae_loss.py             # Reconstruction, LPIPS, KL, and GAN objective
+│   ├── lpips.py                # Perceptual feature loss
+│   └── gan.py                  # Adversarial loss helpers
+├── training/
+│   ├── builders.py             # Model, optimizer, DDP, and DataLoader setup
+│   ├── loop.py                 # Dual-optimizer epoch loop
+│   ├── distributed.py          # Process group, device, and seed handling
+│   ├── metrics.py              # In-training FID/PSNR/LPIPS/SSIM validation
+│   ├── logging.py              # Progress, JSONL, eval, and image logging
+│   └── checkpoint.py           # Load/save and Top-K retention
+├── evaluation/                 # Standalone offline evaluation utilities
+├── tools/                      # DDP smoke and checkpoint comparison tools
+├── stage1_vae_trainer.py       # Primary training entry point
+└── imagenet256_EQVAE.sh        # Eight-GPU launcher
+```
+
+The main execution flow is:
+
+```text
+stage1_vae_trainer.py
+  → DistributedContext and reproducibility setup
+  → builders.py: model, two Adam optimizers, optional DDP wrapper
+  → checkpoint.py: optional model/optimizer restoration
+  → builders.py: train and validation data loaders
+  → loop.py: autoencoder pass + discriminator pass
+  → metrics.py: periodic distributed validation
+  → logging.py and checkpoint.py: rank-0 outputs
+```
+
+`models/vae.py` chooses between two training branches. The image branch
+reconstructs the input directly, with optional low-resolution prior sampling.
+The latent branch encodes the image, applies random scaling and a 90-degree
+rotation in latent space, and compares the decoded result with the
+correspondingly transformed image. Both branches share the same
+`LPIPSWithDiscriminator` objective.
+
+The standalone scripts under `evaluation/` do not participate in the
+in-training validation path. In particular, `evaluation/vis_latent.py`
+requires the optional `diffusers` package, which is not part of the core
+training environment.
   

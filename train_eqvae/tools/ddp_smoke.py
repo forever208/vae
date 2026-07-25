@@ -8,7 +8,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from train_pytorch import DistributedContext, DistributedTrainStep, optimizer_pass
+from training.builders import DistributedTrainStep
+from training.distributed import DistributedContext
+from training.loop import optimizer_pass
 
 
 class ToyAutoencoder(torch.nn.Module):

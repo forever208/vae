@@ -28,8 +28,7 @@ from models.diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 from tqdm import tqdm
 
-from train_eqvae.ldm.models.autoencoder import AutoencoderKL as LDMAutoencoderKL
-from ldm.util import instantiate_from_config
+from train_eqvae.models.vae import AutoencoderKL as LDMAutoencoderKL
 import yaml
 from omegaconf import OmegaConf
 
