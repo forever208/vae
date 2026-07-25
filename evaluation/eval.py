@@ -9,15 +9,15 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
-from train_eqvae.evaluation.calculate_fid import calculate_fid_given_paths
+from evaluation.calculate_fid import calculate_fid_given_paths
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from torchmetrics import StructuralSimilarityIndexMeasure
-from train_eqvae.evaluation.lpips import LPIPS
+from evaluation.lpips import LPIPS
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import csv
 import sys
-from train_eqvae.models.vae import AutoencoderKL
+from models.vae import AutoencoderKL
 import yaml
 from omegaconf import OmegaConf
 
@@ -197,7 +197,7 @@ def calculate_psnr_between_folders(original_folder, processed_folder):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_path', type=str, default='train_eqvae/configs/eqvae_config.yaml')
+    parser.add_argument('--config_path', type=str, default='configs/eqvae_config.yaml')
     parser.add_argument('--model_name', type=str, default='eq_vae')
     parser.add_argument('--ckpt_path', type=str)
     parser.add_argument('--data_path', type=str, default='/path/to/your/imagenet/ILSVRC2012_validation/data')

@@ -4,8 +4,7 @@
 
 - Upstream: https://github.com/CompVis/taming-transformers
 - Upstream commit: `3ba01b241669f5ade541ce990f7650a3b8f65318`
-- Local source used for vendoring:
-  `train_eqvae/src/taming-transformers/taming`
+- Upstream source directory used for vendoring: `taming/`
 - Integrated subset: `losses/lpips.py`, `losses/gan.py`, and
   `models/discriminator.py`
 - License: MIT

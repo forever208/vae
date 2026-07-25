@@ -12,13 +12,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-try:
-    from data.degradation import degradation_fn_bsr, degradation_fn_bsr_light
-except ModuleNotFoundError:
-    from train_eqvae.data.degradation import (
-        degradation_fn_bsr,
-        degradation_fn_bsr_light,
-    )
+from data.degradation import degradation_fn_bsr, degradation_fn_bsr_light
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}

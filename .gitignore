@@ -1,6 +1,6 @@
 .vscode/
 exps/
 __pycache__
-latent_diffusion.egg-info/
+*.egg-info/
 *.ckpt
 *.pth

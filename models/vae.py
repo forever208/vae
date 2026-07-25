@@ -4,14 +4,9 @@ import random
 import torch
 import torch.nn.functional as F
 
-try:
-    from core.config import instantiate_from_config
-    from models.backbone import Decoder, Encoder
-    from models.distributions import DiagonalGaussianDistribution
-except ModuleNotFoundError:
-    from train_eqvae.core.config import instantiate_from_config
-    from train_eqvae.models.backbone import Decoder, Encoder
-    from train_eqvae.models.distributions import DiagonalGaussianDistribution
+from core.config import instantiate_from_config
+from models.backbone import Decoder, Encoder
+from models.distributions import DiagonalGaussianDistribution
 
 
 class AutoencoderKL(torch.nn.Module):

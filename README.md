@@ -1,24 +1,21 @@
 # EQ-VAE training
 
-This directory contains the self-contained PyTorch implementation for training
+This repository contains the self-contained PyTorch implementation for training
 and evaluating the first-stage EQ-VAE. It supports single-GPU execution and
 multi-GPU DistributedDataParallel (DDP) training.
 
 ### 1. Environment setup
 
-Run the setup command from this directory because `environment.yaml` installs
-the local project in editable mode:
+Run the setup command from the repository root because `environment.yaml`
+installs the local project in editable mode:
 
 ```bash
-cd train_eqvae
 conda env create -f environment.yaml
 conda activate eqvae_train
 ```
 
 The small `taming-transformers` subset needed by LPIPS and PatchGAN is already
 integrated into `losses/` and `models/`; no nested Git checkout is required.
-The repository-level `environment.yml` is a separate environment and is not
-the environment used by this trainer.
 
 ### 2. Download SD-VAE
 
@@ -82,7 +79,7 @@ the training loop.
 
 #### 4.2 Single-GPU training
 
-From the `train_eqvae` directory:
+From the repository root:
 
 ```bash
 conda activate eqvae_train
@@ -98,8 +95,8 @@ The provided launcher starts an eight-GPU local DDP job:
 bash imagenet256_EQVAE.sh
 ```
 
-Before using it on another machine, update its hard-coded Conda, repository,
-cache, and output paths. The equivalent portable command is:
+Before using it on another machine, update its Conda and cache paths as needed.
+The equivalent portable command is:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
@@ -203,7 +200,7 @@ resume.
 ### 5. Repository structure and implementation details
 
 ```text
-train_eqvae/
+eqvae/
 ├── configs/
 │   └── eqvae_config.yaml       # Complete model, data, and trainer config
 ├── core/
