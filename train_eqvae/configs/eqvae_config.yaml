@@ -31,20 +31,20 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 10
+    batch_size: 40
     wrap: True
     train:
       target: ldm.data.dataset.DatasetTrain
       params:
-        train_dir: "/data/openimages/target_dir/train/"
-        dataset_name: openimages # Currently we support imagenet/openimages
+        train_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train"
+        dataset_name: imagenet
         size: 256
         degradation: pil_nearest
     validation:
       target: ldm.data.dataset.DatasetVal
       params:
-        val_dir: "/data/openimages/target_dir/validation"
-        dataset_name: openimages # Currently we support imagenet/openimages
+        val_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val"
+        dataset_name: imagenet
         size: 256
         degradation: pil_nearest
 
@@ -84,4 +84,4 @@ lightning:
 
   trainer:
     benchmark: True
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 1

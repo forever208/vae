@@ -15,6 +15,34 @@ import taming.data.utils as tdu
 from ldm.modules.image_degradation import degradation_fn_bsr, degradation_fn_bsr_light
 
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def _list_image_paths(root_dir, recursive=False):
+    if not os.path.isdir(root_dir):
+        raise FileNotFoundError(f"Dataset directory does not exist: {root_dir}")
+
+    rel_paths = []
+    if recursive:
+        for dirpath, _, filenames in os.walk(root_dir):
+            for filename in filenames:
+                if os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS:
+                    path = os.path.join(dirpath, filename)
+                    rel_paths.append(os.path.relpath(path, root_dir))
+    else:
+        rel_paths = [
+            filename
+            for filename in os.listdir(root_dir)
+            if os.path.isfile(os.path.join(root_dir, filename))
+            and os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
+        ]
+
+    rel_paths.sort()
+    if not rel_paths:
+        raise RuntimeError(f"No images found in dataset directory: {root_dir}")
+    return rel_paths
+
+
 
 class DatasetTrain(Dataset):
     def __init__(self, 
@@ -26,9 +54,11 @@ class DatasetTrain(Dataset):
 
         
         if dataset_name == "openimages":
-            rel_paths = [l for l in os.listdir(train_dir)]
-        else: 
-            raise NotImplementedError
+            rel_paths = _list_image_paths(train_dir)
+        elif dataset_name == "imagenet":
+            rel_paths = _list_image_paths(train_dir, recursive=True)
+        else:
+            raise NotImplementedError(f"Unsupported dataset: {dataset_name}")
 
 
         self.labels = {
@@ -132,9 +162,11 @@ class DatasetVal(Dataset):
                  random_crop=True):
         
         if dataset_name == "openimages":
-            rel_paths = [l for l in os.listdir(val_dir)]
-        else: 
-            raise NotImplementedError
+            rel_paths = _list_image_paths(val_dir)
+        elif dataset_name == "imagenet":
+            rel_paths = _list_image_paths(val_dir, recursive=True)
+        else:
+            raise NotImplementedError(f"Unsupported dataset: {dataset_name}")
 
         self.labels = {
             "relative_file_path_": rel_paths,
