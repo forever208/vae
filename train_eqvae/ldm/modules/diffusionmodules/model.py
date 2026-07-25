@@ -431,32 +431,28 @@ class Encoder(nn.Module):
                                         stride=1,
                                         padding=1)
 
-    def forward(self, x):
-        # timestep embedding
-        temb = None
-
-        # downsampling
-        hs = [self.conv_in(x)]
+    def _run_down_blocks(self, features, temb):
+        history = [features]
         for i_level in range(self.num_resolutions):
             for i_block in range(self.num_res_blocks):
-                h = self.down[i_level].block[i_block](hs[-1], temb)
+                features = self.down[i_level].block[i_block](history[-1], temb)
                 if len(self.down[i_level].attn) > 0:
-                    h = self.down[i_level].attn[i_block](h)
-                hs.append(h)
-            if i_level != self.num_resolutions-1:
-                hs.append(self.down[i_level].downsample(hs[-1]))
+                    features = self.down[i_level].attn[i_block](features)
+                history.append(features)
+            if i_level != self.num_resolutions - 1:
+                history.append(self.down[i_level].downsample(history[-1]))
+        return history[-1]
 
-        # middle
-        h = hs[-1]
-        h = self.mid.block_1(h, temb)
-        h = self.mid.attn_1(h)
-        h = self.mid.block_2(h, temb)
+    def _run_middle(self, features, temb):
+        features = self.mid.block_1(features, temb)
+        features = self.mid.attn_1(features)
+        return self.mid.block_2(features, temb)
 
-        # end
-        h = self.norm_out(h)
-        h = nonlinearity(h)
-        h = self.conv_out(h)
-        return h
+    def forward(self, x):
+        """Encode BCHW images into latent distribution moments."""
+        features = self._run_down_blocks(self.conv_in(x), temb=None)
+        features = self._run_middle(features, temb=None)
+        return self.conv_out(nonlinearity(self.norm_out(features)))
 
 
 class Decoder(nn.Module):
@@ -532,37 +528,28 @@ class Decoder(nn.Module):
                                         stride=1,
                                         padding=1)
 
-    def forward(self, z):
-        #assert z.shape[1:] == self.z_shape[1:]
-        self.last_z_shape = z.shape
+    def _run_middle(self, features, temb):
+        features = self.mid.block_1(features, temb)
+        features = self.mid.attn_1(features)
+        return self.mid.block_2(features, temb)
 
-        # timestep embedding
-        temb = None
-
-        # z to block_in
-        h = self.conv_in(z)
-
-        # middle
-        h = self.mid.block_1(h, temb)
-        h = self.mid.attn_1(h)
-        h = self.mid.block_2(h, temb)
-
-        # upsampling
+    def _run_up_blocks(self, features, temb):
         for i_level in reversed(range(self.num_resolutions)):
-            for i_block in range(self.num_res_blocks+1):
-                h = self.up[i_level].block[i_block](h, temb)
+            for i_block in range(self.num_res_blocks + 1):
+                features = self.up[i_level].block[i_block](features, temb)
                 if len(self.up[i_level].attn) > 0:
-                    h = self.up[i_level].attn[i_block](h)
+                    features = self.up[i_level].attn[i_block](features)
             if i_level != 0:
-                h = self.up[i_level].upsample(h)
+                features = self.up[i_level].upsample(features)
+        return features
 
-        # end
+    def forward(self, z):
+        """Decode BCHW latent tensors into reconstructed images."""
+        self.last_z_shape = z.shape
+        h = self._run_up_blocks(self._run_middle(self.conv_in(z), temb=None), temb=None)
         if self.give_pre_end:
             return h
-
-        h = self.norm_out(h)
-        h = nonlinearity(h)
-        h = self.conv_out(h)
+        h = self.conv_out(nonlinearity(self.norm_out(h)))
         if self.tanh_out:
             h = torch.tanh(h)
         return h

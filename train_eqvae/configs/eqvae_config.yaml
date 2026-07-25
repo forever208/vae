@@ -2,106 +2,109 @@ model:
   base_learning_rate: 4.5e-6
   target: ldm.models.autoencoder.AutoencoderKL
   params:
-    monitor: "val/rec_loss"
     embed_dim: 4
-    anisotropic: False
-    uniform_sample_scale: True
-    p_prior: 0.5
-    p_prior_s: 0.25
+    anisotropic: false
+    uniform_sample_scale: true
+    p_prior: 0.0
+    p_prior_s: 0.0
     lossconfig:
       target: ldm.modules.losses.LPIPSWithDiscriminator
       params:
         disc_start: 0
         kl_weight: 0.000001
         disc_weight: 0.5
-
     ddconfig:
-      double_z: True
+      double_z: true
       z_channels: 4
       resolution: 256
       in_channels: 3
       out_ch: 3
       ch: 128
-      ch_mult: [ 1,2,4,4 ]  # num_down = len(ch_mult)-1
+      ch_mult: [1, 2, 4, 4]
       num_res_blocks: 2
-      attn_resolutions: [ ]
+      attn_resolutions: []
       dropout: 0.0
 
-
 data:
-  target: main.DataModuleFromConfig
-  params:
-    batch_size: 20
-    wrap: True
-    train:
-      target: ldm.data.dataset.DatasetTrain
-      params:
-        train_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train"
-        dataset_name: imagenet
-        size: 256
-        degradation: pil_nearest
-    validation:
-      target: ldm.data.dataset.DatasetVal
-      params:
-        val_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val"
-        dataset_name: imagenet
-        size: 256
-        degradation: pil_nearest
-        eval_preprocessing: true
-
-
-
-
-# data:
-#   target: main.DataModuleFromConfig
-#   params:
-#     batch_size: 10
-#     wrap: True
-#     train:
-#       target: ldm.data.dataset.DatasetTrain
-#       params:
-#         train_dir: "/data/imagenet/train"
-#         dataset_name: imagenet # Currently we support imagenet/openimages
-#         size: 256
-#         degradation: pil_nearest
-#     validation:
-#       target: ldm.data.dataset.DatasetVal
-#       params:
-#         val_dir: "/data/imagenet/val"
-#         dataset_name: imagenet # Currently we support imagenet/openimages
-#         size: 256
-#         degradation: pil_nearest
-
-
-
-lightning:
-  callbacks:
-    image_logger:
-      target: main.ImageLogger
-      params:
-        batch_frequency: 1000
-        max_images: 8
-        increase_log_steps: True
-    reconstruction_metrics:
-      target: main.ReconstructionMetricsCallback
-    progress_bar:
-      target: main.TrainOnlyTQDMProgressBar
-      params:
-        refresh_rate: 100
-
-  modelcheckpoint:
-    target: pytorch_lightning.callbacks.ModelCheckpoint
+  batch_size: 20
+  train:
+    target: ldm.data.dataset.DatasetTrain
     params:
-      filename: "{step:09}"
-      monitor: "val/fid"
-      mode: min
-      save_top_k: 5
-      save_last: true
-      save_on_train_epoch_end: false
+      train_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train"
+      dataset_name: imagenet
+      size: 256
+      degradation: pil_nearest
+  validation:
+    target: ldm.data.dataset.DatasetVal
+    params:
+      val_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val"
+      dataset_name: imagenet
+      size: 256
+      degradation: pil_nearest
+      eval_preprocessing: true
 
-  trainer:
-    benchmark: True
-    accumulate_grad_batches: 1
-    val_check_interval: 2000
-    num_sanity_val_steps: 0
+pytorch_training:
+  device: "cuda:0"
+  seed: 23
+  deterministic: false
+  benchmark: true
+  max_epochs: 1000
+  max_batches: null
+  precision: "fp32"
+  scale_learning_rate: true
+  accumulate_grad_batches: 1
+
+  distributed:
+    backend: "nccl"
+    find_unused_parameters: true
+    broadcast_buffers: false
+
+  dataloader:
+    num_workers: 8
+    shuffle: true
+    drop_last: true
+    pin_memory: true
+
+  optimizer:
+    betas: [0.5, 0.9]
+    zero_grad_set_to_none: true
+
+  validation:
+    enabled: true
+    interval_local_steps: 2000
+    run_at_end: false
+    log_filename: "eval.log"
+    dataloader:
+      num_workers: 8
+      shuffle: false
+      drop_last: false
+      pin_memory: true
+
+  checkpoint:
+    resume_path: "pretrained_models/model.ckpt"
+    resume_optimizer: true
+    strict_model_load: false
+    output_dir: "/home/ningmang/eqvae/exps/imagenet256_SDVAE_PyTorch"
+    directory: "checkpoints"
+    monitor: "val/fid"
+    mode: "min"
+    save_top_k: 5
+    save_last: true
+    filename_pattern: "step_{global_step:09d}.pt"
+
+  logging:
     log_every_n_steps: 100
+    progress_refresh_steps: 100
+    metrics_filename: "train_metrics.jsonl"
+    overwrite_metrics_file: false
+    validation_images: true
+    max_images: 8
+    print_parameter_norms: false
+
+  comparison:
+    parameter_names:
+      - "encoder.conv_in.weight"
+      - "decoder.conv_out.weight"
+      - "quant_conv.weight"
+      - "post_quant_conv.weight"
+      - "loss.discriminator.main.0.weight"

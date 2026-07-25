@@ -58,6 +58,16 @@ class LPIPSWithDiscriminator(nn.Module):
             weighted_nll_loss = weights*nll_loss
         weighted_nll_loss = torch.sum(weighted_nll_loss) / weighted_nll_loss.shape[0]
         nll_loss = torch.sum(nll_loss) / nll_loss.shape[0]
+        pixel_contribution = pixel_loss / torch.exp(self.logvar)
+        lpips_contribution = self.perceptual_weight * p_loss * torch.ones_like(pixel_loss) / torch.exp(self.logvar)
+        logvar_contribution = self.logvar * torch.ones_like(pixel_loss)
+        if weights is not None:
+            pixel_contribution = weights * pixel_contribution
+            lpips_contribution = weights * lpips_contribution
+            logvar_contribution = weights * logvar_contribution
+        weighted_pixel_loss = torch.sum(pixel_contribution) / pixel_contribution.shape[0]
+        weighted_lpips_loss = torch.sum(lpips_contribution) / lpips_contribution.shape[0]
+        weighted_logvar_loss = torch.sum(logvar_contribution) / logvar_contribution.shape[0]
         kl_loss = posteriors.kl()
         kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
 
@@ -91,6 +101,9 @@ class LPIPSWithDiscriminator(nn.Module):
                    "{}/rec_loss".format(split): rec_loss.detach().mean(),
                    "{}/pixel_loss".format(split): pixel_loss.detach().mean(),
                    "{}/lpips_loss".format(split): p_loss.detach().mean(),
+                   "{}/weighted_pixel_loss".format(split): weighted_pixel_loss.detach().mean(),
+                   "{}/weighted_lpips_loss".format(split): weighted_lpips_loss.detach().mean(),
+                   "{}/weighted_logvar_loss".format(split): weighted_logvar_loss.detach().mean(),
                    "{}/weighted_kl_loss".format(split): weighted_kl_loss.detach().mean(),
                    "{}/weighted_g_loss".format(split): weighted_g_loss.detach().mean(),
                    "{}/d_weight".format(split): d_weight.detach(),

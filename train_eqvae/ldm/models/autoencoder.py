@@ -1,78 +1,46 @@
 import torch
-import pytorch_lightning as pl
 import torch.nn.functional as F
-from contextlib import contextmanager
-
-from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
 
 from ldm.modules.diffusionmodules.model import Encoder, Decoder
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
-
 from ldm.util import instantiate_from_config
 import random
-import json
-import os
-import copy
 
 
-
-def flip_or_rotate_image(inputs, flip):
-    if flip == "h":
-        inputs = torch.flip(inputs, [-1])
-
-    elif flip == "v":
-        inputs = torch.flip(inputs, [-2])
-
-    elif flip == "vh":
-        inputs = torch.flip(inputs, [-1,-2])
-
-    elif flip == "90":
-        inputs = torch.rot90(inputs, k=1, dims=[-1, -2]) 
-    
-    else:
-        inputs = torch.rot90(inputs, k=3, dims=[-1, -2]) 
-
-    return inputs
-
-
-class AutoencoderKL(pl.LightningModule):
-    def __init__(self,
-                 ddconfig,
-                 lossconfig,
-                 embed_dim,
-                 anisotropic=False,
-                 uniform_sample_scale=True,
-                 ckpt_path=None,
-                 p_prior=0.5,
-                 p_prior_s=0.25,
-                 ignore_keys=[],
-                 image_key="image",
-                 colorize_nlabels=None,
-                 monitor=None,
-                 ):
+class AutoencoderKL(torch.nn.Module):
+    def __init__(self, ddconfig, lossconfig, embed_dim, anisotropic=False, uniform_sample_scale=True, ckpt_path=None,
+                 p_prior=0.5, p_prior_s=0.25, ignore_keys=None, image_key="image", colorize_nlabels=None, monitor=None):
         super().__init__()
+        ignore_keys = ignore_keys or []
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
         self.loss = instantiate_from_config(lossconfig)
         self.uniform_sample_scale = uniform_sample_scale
         self.anisotropic = anisotropic
-        self.p_prior=p_prior
-        self.p_prior_s=p_prior_s
+        self.p_prior = p_prior
+        self.p_prior_s = p_prior_s
         assert ddconfig["double_z"]
-        self.quant_conv = torch.nn.Conv2d(2*ddconfig["z_channels"], 2*embed_dim, 1)
+        self.quant_conv = torch.nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
         self.embed_dim = embed_dim
         if colorize_nlabels is not None:
-            assert type(colorize_nlabels)==int
+            assert isinstance(colorize_nlabels, int)
             self.register_buffer("colorize", torch.randn(3, colorize_nlabels, 1, 1))
         if monitor is not None:
             self.monitor = monitor
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
 
-    def init_from_ckpt(self, path, ignore_keys=list()):
-        sd = torch.load(path, map_location="cpu")["state_dict"]
+    def init_from_ckpt(self, path, ignore_keys=None):
+        ignore_keys = ignore_keys or []
+        try:
+            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(path, map_location="cpu")
+        sd = checkpoint.get("model", checkpoint.get("state_dict"))
+        if sd is None:
+            raise KeyError(f"Checkpoint {path} has no model or state_dict entry")
         keys = list(sd.keys())
         for k in keys:
             for ik in ignore_keys:
@@ -96,13 +64,10 @@ class AutoencoderKL(pl.LightningModule):
     def forward(self, input, scale=1, angle=0):
         posterior = self.encode(input)
         z = posterior.sample()
-
-        if scale != 1:            
-            z = torch.nn.functional.interpolate(z, scale_factor=scale, mode='bilinear', align_corners=False)
-
+        if scale != 1:
+            z = F.interpolate(z, scale_factor=scale, mode="bilinear", align_corners=False)
         if angle != 0:
-            z = torch.rot90(z, k=angle, dims=[-1, -2]) 
-
+            z = torch.rot90(z, k=angle, dims=[-1, -2])
         dec = self.decode(z)
         return dec, posterior, z
 
@@ -113,99 +78,59 @@ class AutoencoderKL(pl.LightningModule):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def _training_forward(self, batch):
         inputs = self.get_input(batch, self.image_key)
 
-        # EQ-VAE regularization 
+        # EQ-VAE regularization
         if random.random() < self.p_prior:
-
             mode = "latent"
             if self.anisotropic:
-                scale_x = random.choice([s / 32 for s in range(8,32)])
-                scale_y = random.choice([s / 32 for s in range(8,32)])
-                scale=(scale_x, scale_y)
+                scale_x = random.choice([s / 32 for s in range(8, 32)])
+                scale_y = random.choice([s / 32 for s in range(8, 32)])
+                scale = (scale_x, scale_y)
             else:
-                scale = random.choice([s / 32 for s in range(8,32)])
+                scale = random.choice([s / 32 for s in range(8, 32)])
 
             # rotation angles 1 -> π/2, 2 -> π, 3 -> 3π/2
             angle = random.choice([1, 2, 3])
-            reconstructions, posterior, z_after = self(inputs, scale=scale, angle=angle)
-
-            # Scale ground truth images with the same scale
-            inputs = torch.nn.functional.interpolate(inputs, scale_factor=scale, mode='bilinear', align_corners=False)
-            
-            # Rotate ground truth images with the same angle
-            inputs = torch.rot90(inputs, k=angle, dims=[-1, -2]) 
-
-        # prior preservation
+            reconstructions, posterior, _ = self(inputs, scale=scale, angle=angle)
+            inputs = F.interpolate(inputs, scale_factor=scale, mode="bilinear", align_corners=False)
+            inputs = torch.rot90(inputs, k=angle, dims=[-1, -2])
         else:
             mode = "image"
-            # this is prior preservation for low resolution images
             if random.random() < self.p_prior_s:
-
-                scale = random.choice([s / 32 for s in range(8,32)])
-                inputs = torch.nn.functional.interpolate(inputs, scale_factor=scale, mode='bilinear', align_corners=False)
+                scale = random.choice([s / 32 for s in range(8, 32)])
+                inputs = F.interpolate(inputs, scale_factor=scale, mode="bilinear", align_corners=False)
                 reconstructions, posterior, _ = self(inputs)
-
-            # this is prior preservation for full resolution images
             else:
-                scale=1
+                scale = 1
                 reconstructions, posterior, _ = self(inputs)
 
+        return inputs, reconstructions, posterior, scale, mode
 
-
-        if optimizer_idx == 0:
-
-            aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train")
-
-            scale_value = torch.as_tensor(scale, device=self.device).float().mean()
-            self.log("train/ae_loss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=False)
-            self.log("train/ae_scale", scale_value, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            self.log("train/ae_latent", float(mode == "latent"), prog_bar=False, logger=True,
-                     on_step=True, on_epoch=False)
-            self.log_dict(log_dict_ae, prog_bar=True, logger=True, on_step=True, on_epoch=False)
-            return aeloss
-
-        if optimizer_idx == 1:
-
-            discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
-                                                last_layer=self.get_last_layer(), split="train")
-
-            scale_value = torch.as_tensor(scale, device=self.device).float().mean()
-            self.log("train/disc_scale", scale_value, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            self.log("train/disc_latent", float(mode == "latent"), prog_bar=False, logger=True,
-                     on_step=True, on_epoch=False)
-            self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            return discloss
-
-    def validation_step(self, batch, batch_idx):
-        inputs = self.get_input(batch, self.image_key)
-        reconstructions, posterior, _ = self(inputs)
-        aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, 0, self.global_step,
-                                        last_layer=self.get_last_layer(), split="val")
-
-        discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, 1, self.global_step,
-                                            last_layer=self.get_last_layer(), split="val")
-
-        self.log("val/rec_loss", log_dict_ae["val/rec_loss"])
-        self.log_dict(log_dict_ae)
-        self.log_dict(log_dict_disc)
-        return {
-            "inputs": inputs.detach(),
-            "reconstructions": reconstructions.detach(),
+    def compute_train_loss(self, batch, optimizer_idx, global_step):
+        """Compute one optimizer's loss without depending on a Trainer."""
+        inputs, reconstructions, posterior, scale, mode = self._training_forward(batch)
+        loss, log_dict = self.loss(inputs, reconstructions, posterior, optimizer_idx, global_step,
+                                   last_layer=self.get_last_layer(), split="train")
+        metadata = {
+            "scale": torch.as_tensor(scale, device=inputs.device).float().mean(),
+            "latent": torch.as_tensor(float(mode == "latent"), device=inputs.device),
         }
+        return loss, log_dict, metadata
 
-    def configure_optimizers(self):
-        lr = self.learning_rate
-        opt_ae = torch.optim.Adam(list(self.encoder.parameters())+
-                                  list(self.decoder.parameters())+
-                                  list(self.quant_conv.parameters())+
-                                  list(self.post_quant_conv.parameters()),
-                                  lr=lr, betas=(0.5, 0.9))
-        opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(),
-                                    lr=lr, betas=(0.5, 0.9))
-        return [opt_ae, opt_disc], []
+    @torch.no_grad()
+    def compute_validation_outputs(self, batch):
+        inputs = self.get_input(batch, self.image_key)
+        reconstructions, _, _ = self(inputs)
+        return {"inputs": inputs.detach(), "reconstructions": reconstructions.detach()}
+
+    def build_optimizers(self, learning_rate, betas=(0.5, 0.9)):
+        ae_parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
+        ae_parameters += list(self.quant_conv.parameters()) + list(self.post_quant_conv.parameters())
+        opt_ae = torch.optim.Adam(ae_parameters, lr=learning_rate, betas=betas)
+        opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(), lr=learning_rate, betas=betas)
+        return opt_ae, opt_disc
 
     def get_last_layer(self):
         return self.decoder.conv_out.weight
@@ -214,7 +139,7 @@ class AutoencoderKL(pl.LightningModule):
     def log_images(self, batch, only_inputs=False, **kwargs):
         log = dict()
         x = self.get_input(batch, self.image_key)
-        x = x.to(self.device)
+        x = x.to(next(self.parameters()).device)
         if not only_inputs:
             if random.random() < 0.5:
                 xrec, posterior, _ = self(x)

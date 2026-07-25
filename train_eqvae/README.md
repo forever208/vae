@@ -40,20 +40,14 @@ Currently, we provide experiments for [OpenImages](https://storage.googleapis.co
 To run EQ-VAE regularization on 8 GPUs:
 
 ```bash
-python main.py \
-    --base configs/eqvae_config.yaml \
-    -t \
-    --gpus 0,1,2,3,4,5,6,7 \
-    --resume pretrained_models/model.ckpt \
-    --logdir logs/eq-vae   
+bash imagenet256_EQVAE_pytorch_ddp.sh
 ```
 
-
-Then this script will automatically create the folder in `logs/eq-vae` to save logs and checkpoints.
-The provided arguments in `configs/eqvae_config.yaml` are the ones used in our paper.  You can adjust the following options for your experiments:
+All model, data, validation, logging, distributed, and checkpoint options live in `configs/eqvae_config.yaml`.
+For one GPU, run `bash imagenet256_EQVAE_pytorch_single_gpu.sh`.
 
 - `anisotropic`: If `True` will do anisotropic scaling 
 - `uniform_sample_scale`: If `True` will sample scale factors uniformly from `[0.25, 1)` if set to `False` will randomly choose from scales from `{0.25, 0.5, 0.75}`.
-- `p_prior`: Probability to do prior preservation instead of equivariance regularization
-- `p_prior_s`: Probability to do prior presevation on lower resolutions instead of equivariance regularization
+- `p_prior`: Probability of the latent equivariance branch.
+- `p_prior_s`: Probability of low-resolution prior preservation inside the image branch.
   
