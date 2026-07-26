@@ -89,10 +89,11 @@ CUDA_VISIBLE_DEVICES=0 python stage1_vae_trainer.py \
 
 #### 4.3 Multi-GPU training
 
-The provided launcher starts an eight-GPU local DDP job:
+The provided launchers start eight-GPU local DDP jobs:
 
 ```bash
 bash imagenet256_EQVAE.sh
+bash imagenet256_DSM.sh
 ```
 
 Before using it on another machine, update its Conda and cache paths as needed.
@@ -131,18 +132,15 @@ With the default configuration this is `9e-5` on one GPU and `7.2e-4` on
 eight GPUs. The current trainer executes in FP32; the `precision` configuration
 field is reserved and does not currently enable automatic mixed precision.
 
-#### 4.5 EQ-VAE-specific options
+#### 4.5 DSM-specific options
 
-- `anisotropic`: independently samples height and width scales in the latent
-  equivariance branch when enabled.
-- `p_prior`: probability of using the latent equivariance branch. A value of
-  `0.0` disables that branch.
+- `p_prior`: probability of applying DSM block-DCT low-pass regularization to
+  both the input target and sampled latent. A value of `0.0` disables DSM.
 - `p_prior_s`: probability of resizing the input in the normal image branch.
   A value of `0.0` disables this low-resolution prior.
-- Scale factors are currently sampled from
-  `{0.25, 0.28125, ..., 0.96875}`.
-- `uniform_sample_scale` is retained for configuration compatibility but is
-  not currently used by the sampling implementation.
+- `blk_sz`: DCT block size. It must divide both image and latent spatial
+  dimensions; the ImageNet 256 configuration uses `8`.
+- A DSM step samples its frequency mask from `{8, 10, 12}`.
 - `lossconfig.params.kl_weight`, `disc_weight`, and `disc_start` control the
   KL term, adversarial weight, and discriminator start step.
 
@@ -201,14 +199,15 @@ resume.
 ```text
 eqvae/
 ├── configs/
-│   └── eqvae_config.yaml       # Complete model, data, and trainer config
+│   ├── eqvae_config_imgnet256.yaml
+│   └── dsm_config_imgnet256.yaml
 ├── core/
 │   └── config.py               # Dynamic target-based object construction
 ├── data/
 │   ├── datasets.py             # ImageNet/OpenImages datasets
 │   └── degradation/            # BSRGAN and interpolation degradations
 ├── models/
-│   ├── vae.py                  # AutoencoderKL and EQ-VAE train branches
+│   ├── vae.py                  # AutoencoderKL and DSM train branch
 │   ├── backbone.py             # Encoder and decoder
 │   ├── discriminator.py        # PatchGAN discriminator
 │   └── distributions.py        # Diagonal Gaussian posterior
@@ -226,7 +225,8 @@ eqvae/
 ├── evaluation/                 # Standalone offline evaluation utilities
 ├── tools/                      # DDP smoke and checkpoint comparison tools
 ├── stage1_vae_trainer.py       # Primary training entry point
-└── imagenet256_EQVAE.sh        # Eight-GPU launcher
+├── imagenet256_EQVAE.sh
+└── imagenet256_DSM.sh          # DSM eight-GPU launcher
 ```
 
 The main execution flow is:
@@ -244,10 +244,10 @@ stage1_vae_trainer.py
 
 `models/vae.py` chooses between two training branches. The image branch
 reconstructs the input directly, with optional low-resolution prior sampling.
-The latent branch encodes the image, applies random scaling and a 90-degree
-rotation in latent space, and compares the decoded result with the
-correspondingly transformed image. Both branches share the same
-`LPIPSWithDiscriminator` objective.
+The DSM branch applies the same randomly sampled block-DCT low-pass mask to
+the input target and sampled latent before decoding. Both branches share the
+same `LPIPSWithDiscriminator` objective, while KL is computed from the
+unfiltered posterior.
 
 The standalone scripts under `evaluation/` do not participate in the
 in-training validation path. In particular, `evaluation/vis_latent.py`

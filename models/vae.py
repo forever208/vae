@@ -1,4 +1,4 @@
-"""EQ-VAE model implementation."""
+"""VAE model with DSM regularization."""
 
 import random
 import torch
@@ -7,13 +7,20 @@ import torch.nn.functional as F
 from losses.vae_loss import LPIPSWithDiscriminator
 from models.backbone import Decoder, Encoder
 from models.distributions import DiagonalGaussianDistribution
+from utils_DCT import (
+    combine_blocks_torch,
+    dct_2d_torch_unified,
+    idct_2d_torch_unified,
+    split_into_blocks_torch,
+)
 
 
 class AutoencoderKL(torch.nn.Module):
     def __init__(
         self, ddconfig, lossconfig, embed_dim, anisotropic=False,
         uniform_sample_scale=True, ckpt_path=None, p_prior=0.5, p_prior_s=0.25,
-        ignore_keys=None, image_key="image", colorize_nlabels=None, monitor=None,
+        blk_sz=8, ignore_keys=None, image_key="image", colorize_nlabels=None,
+        monitor=None,
     ):
         super().__init__()
         ignore_keys = ignore_keys or []
@@ -21,10 +28,11 @@ class AutoencoderKL(torch.nn.Module):
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
         self.loss = LPIPSWithDiscriminator(**lossconfig)
-        self.uniform_sample_scale = uniform_sample_scale
-        self.anisotropic = anisotropic
+        # Retain these arguments so historical EQ-VAE configs still load.
+        del anisotropic, uniform_sample_scale
         self.p_prior = p_prior
         self.p_prior_s = p_prior_s
+        self.blk_sz = blk_sz
         assert ddconfig["double_z"]
         self.quant_conv = torch.nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
@@ -59,14 +67,35 @@ class AutoencoderKL(torch.nn.Module):
     def decode(self, z):
         return self.decoder(self.post_quant_conv(z))
 
-    def forward(self, input, scale=1, angle=0):
+    def forward(self, input):
         posterior = self.encode(input)
         z = posterior.sample()
-        if scale != 1:
-            z = F.interpolate(z, scale_factor=scale, mode="bilinear", align_corners=False)
-        if angle != 0:
-            z = torch.rot90(z, k=angle, dims=[-1, -2])
         return self.decode(z), posterior, z
+
+    @staticmethod
+    def _dsm_low_pass(x, dsm_mask, blk_sz):
+        height, width = x.shape[-2:]
+        if height % blk_sz != 0 or width % blk_sz != 0:
+            raise ValueError(f"DSM block size {blk_sz} must divide spatial shape {height}x{width}")
+
+        blocks = split_into_blocks_torch(x, blk_sz)
+        coefficients = dct_2d_torch_unified(blocks, center="none")
+
+        max_sum = 2 * (blk_sz - 1)
+        threshold = max_sum - (dsm_mask - 1)
+        u = torch.arange(blk_sz, device=x.device).view(blk_sz, 1)
+        v = torch.arange(blk_sz, device=x.device).view(1, blk_sz)
+        high_frequency_mask = (u + v) >= threshold
+        coefficients[..., high_frequency_mask] = 0.0
+
+        blocks = idct_2d_torch_unified(coefficients, center="none")
+        return combine_blocks_torch(blocks, height, width, blk_sz)
+
+    def apply_dsm(self, inputs, latents, dsm_mask):
+        return (
+            self._dsm_low_pass(inputs, dsm_mask, self.blk_sz),
+            self._dsm_low_pass(latents, dsm_mask, self.blk_sz),
+        )
 
     def prepare_batch_input(self, batch, key):
         x = batch[key]
@@ -77,18 +106,16 @@ class AutoencoderKL(torch.nn.Module):
     def _training_forward(self, batch):
         inputs = self.prepare_batch_input(batch, self.image_key)
 
-        # EQ-VAE
+        # DSM regularization
         if random.random() < self.p_prior:
-            mode = "latent"
-            if self.anisotropic:
-                scale = tuple(random.choice([s / 32 for s in range(8, 32)]) for _ in range(2))
-            else:
-                scale = random.choice([s / 32 for s in range(8, 32)])
-            angle = random.choice([1, 2, 3])
-            reconstructions, posterior, _ = self(inputs, scale=scale, angle=angle)
-            inputs = F.interpolate(inputs, scale_factor=scale, mode="bilinear", align_corners=False,)
-            inputs = torch.rot90(inputs, k=angle, dims=[-1, -2])
-        
+            mode = "dsm"
+            scale = 1
+            dsm_mask = random.choice((8, 10, 12))  # DSM mask size under blk_sz=8
+            posterior = self.encode(inputs)
+            latents = posterior.sample()
+            inputs, latents = self.apply_dsm(inputs, latents, dsm_mask)
+            reconstructions = self.decode(latents)
+
         # SDVAE
         else:
             mode = "image"
@@ -109,7 +136,7 @@ class AutoencoderKL(torch.nn.Module):
         )
         metadata = {
             "scale": torch.as_tensor(scale, device=inputs.device).float().mean(),
-            "latent": torch.as_tensor(float(mode == "latent"), device=inputs.device),
+            "dsm": torch.as_tensor(float(mode == "dsm"), device=inputs.device),
         }
         return loss, log_dict, metadata
 
@@ -127,10 +154,7 @@ class AutoencoderKL(torch.nn.Module):
         log = {}
         x = self.prepare_batch_input(batch, self.image_key).to(next(self.parameters()).device)
         if not only_inputs:
-            if random.random() < 0.5:
-                xrec, posterior, _ = self(x)
-            else:
-                xrec, posterior, _ = self(x, scale=0.5)
+            xrec, posterior, _ = self(x)
             if x.shape[1] > 3:
                 assert xrec.shape[1] > 3
                 x, xrec = self.to_rgb(x), self.to_rgb(xrec)

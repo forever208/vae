@@ -1,4 +1,4 @@
-"""CPU-only two-process smoke test for the EQ-VAE DDP optimizer path."""
+"""CPU-only two-process smoke test for the VAE DDP optimizer path."""
 
 import sys
 from pathlib import Path
@@ -22,7 +22,7 @@ class ToyAutoencoder(torch.nn.Module):
     def compute_train_loss(self, batch, optimizer_index, global_step):
         layer = self.ae if optimizer_index == 0 else self.discriminator
         loss = layer(batch["image"]).square().mean()
-        metadata = {"scale": torch.tensor(1.0), "latent": torch.tensor(0.0)}
+        metadata = {"scale": torch.tensor(1.0), "dsm": torch.tensor(0.0)}
         return loss, {f"loss/{optimizer_index}": loss.detach()}, metadata
 
 

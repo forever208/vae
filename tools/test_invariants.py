@@ -8,9 +8,9 @@ from omegaconf import OmegaConf
 
 from core.config import instantiate_from_config
 from data.datasets import DatasetTrain, DatasetVal
+from models.vae import AutoencoderKL
 from losses import lpips as lpips_module
 from losses.vae_loss import LPIPSWithDiscriminator
-from models.vae import AutoencoderKL
 from training.checkpoint import save_checkpoint, torch_load
 
 
@@ -58,10 +58,57 @@ def check_lpips_key_contract():
     assert "slice5.28.weight" in keys
 
 
+def check_loss_contribution_logging():
+    class ConstantPerceptual(torch.nn.Module):
+        def forward(self, inputs, reconstructions):
+            return torch.full(
+                (inputs.shape[0], 1, 1, 1), 0.25,
+                device=inputs.device,
+            )
+
+    class MeanDiscriminator(torch.nn.Module):
+        def forward(self, inputs):
+            return inputs.mean(dim=(1, 2, 3), keepdim=True)
+
+    class Posterior:
+        def kl(self):
+            return torch.full((2,), 4.0)
+
+    objective = LPIPSWithDiscriminator.__new__(LPIPSWithDiscriminator)
+    torch.nn.Module.__init__(objective)
+    objective.perceptual_loss = ConstantPerceptual()
+    objective.perceptual_weight = 2.0
+    objective.logvar = torch.nn.Parameter(torch.tensor(0.0))
+    objective.discriminator = MeanDiscriminator()
+    objective.disc_conditional = False
+    objective.disc_factor = 1.0
+    objective.discriminator_iter_start = 0
+    objective.kl_weight = 0.1
+    objective.calculate_adaptive_weight = (
+        lambda *args, **kwargs: torch.tensor(3.0)
+    )
+
+    inputs = torch.zeros(2, 1, 2, 2)
+    reconstructions = torch.ones_like(inputs)
+    loss, logs = objective(
+        inputs, reconstructions, Posterior(), optimizer_idx=0, global_step=1,
+    )
+    contributions = sum(
+        logs[f"train/{name}"]
+        for name in ("rec_loss", "lpips_loss", "g_loss", "kl_loss")
+    )
+    assert torch.allclose(loss.detach(), contributions)
+    assert torch.allclose(logs["train/rec_loss"], torch.tensor(4.0))
+    assert torch.allclose(logs["train/lpips_loss"], torch.tensor(2.0))
+    assert torch.allclose(logs["train/g_loss"], torch.tensor(-3.0))
+    assert torch.allclose(logs["train/kl_loss"], torch.tensor(0.4))
+
+
 def main():
     check_import_contract()
     check_checkpoint_contract()
     check_lpips_key_contract()
+    check_loss_contribution_logging()
     print("EQ-VAE invariants: ok")
 
 

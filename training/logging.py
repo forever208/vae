@@ -38,9 +38,9 @@ def build_train_metrics(
         "train/ae_loss": float(ae_loss.detach().cpu()),
         "train/disc_loss": float(disc_loss.detach().cpu()),
         "train/ae_scale": float(ae_meta["scale"].cpu()),
-        "train/ae_latent": float(ae_meta["latent"].cpu()),
+        "train/ae_dsm": float(ae_meta["dsm"].cpu()),
         "train/disc_scale": float(disc_meta["scale"].cpu()),
-        "train/disc_latent": float(disc_meta["latent"].cpu()),
+        "train/disc_dsm": float(disc_meta["dsm"].cpu()),
     }
     metrics.update(to_scalars(ae_logs))
     metrics.update(to_scalars(disc_logs))
@@ -55,7 +55,7 @@ def progress_values(metrics, optimizers):
         "gstep": metrics["global_step"],
         "lr": f"{optimizers[0].param_groups[0]['lr']:.2g}",
         "ae": f"{metrics['train/ae_loss']:.3g}",
-        "rec": f"{metrics['train/pixel_loss']:.3g}",
+        "rec": f"{metrics['train/rec_loss']:.3g}",
         "lpips": f"{metrics['train/lpips_loss']:.3g}",
         "gan": f"{metrics['train/g_loss']:.3g}",
         "kl": f"{metrics['train/kl_loss']:.3g}",

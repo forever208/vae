@@ -55,11 +55,19 @@ class LPIPSWithDiscriminator(nn.Module):
             p_loss = self.perceptual_loss(inputs.contiguous(), reconstructions.contiguous())
             rec_loss = rec_loss + self.perceptual_weight * p_loss
 
-        # Scale reconstruction likelihood with a learned log variance.
-        nll_loss = rec_loss / torch.exp(self.logvar) + self.logvar
-        weighted_nll_loss = weights * nll_loss if weights is not None else nll_loss
-        weighted_nll_loss = torch.sum(weighted_nll_loss) / weighted_nll_loss.shape[0]
-        nll_loss = torch.sum(nll_loss) / nll_loss.shape[0]
+        # Split the reconstruction likelihood into additive contributions so
+        # logging reflects the values that actually enter the objective.
+        inverse_variance = torch.exp(-self.logvar)
+        pixel_nll = pixel_loss * inverse_variance + self.logvar
+        lpips_nll = (torch.ones_like(pixel_loss) * self.perceptual_weight * p_loss * inverse_variance)
+        nll = pixel_nll + lpips_nll
+        weighted_pixel_nll = weights * pixel_nll if weights is not None else pixel_nll
+        weighted_lpips_nll = weights * lpips_nll if weights is not None else lpips_nll
+        batch_size = nll.shape[0]
+        weighted_pixel_nll = torch.sum(weighted_pixel_nll) / batch_size
+        weighted_lpips_nll = torch.sum(weighted_lpips_nll) / batch_size
+        weighted_nll_loss = weighted_pixel_nll + weighted_lpips_nll
+        nll_loss = torch.sum(nll) / batch_size
         kl_values = posteriors.kl()
         kl_loss = torch.sum(kl_values) / kl_values.shape[0]
 
@@ -88,10 +96,14 @@ class LPIPSWithDiscriminator(nn.Module):
             loss = weighted_nll_loss + weighted_kl_loss + weighted_g_loss
 
             log = {
-                f"{split}/kl_loss": kl_loss.detach().mean(),
-                f"{split}/pixel_loss": pixel_loss.detach().mean(),
-                f"{split}/lpips_loss": p_loss.detach().mean(),
-                f"{split}/g_loss": g_loss.detach().mean(),
+                f"{split}/rec_loss": weighted_pixel_nll.detach(),
+                f"{split}/lpips_loss": weighted_lpips_nll.detach(),
+                f"{split}/g_loss": weighted_g_loss.detach(),
+                f"{split}/kl_loss": weighted_kl_loss.detach(),
+                f"{split}/raw_pixel_loss": pixel_loss.detach().mean(),
+                f"{split}/raw_lpips_loss": p_loss.detach().mean(),
+                f"{split}/raw_g_loss": g_loss.detach().mean(),
+                f"{split}/raw_kl_loss": kl_loss.detach().mean(),
             }
             return loss, log
 

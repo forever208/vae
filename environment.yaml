@@ -22,4 +22,5 @@ dependencies:
       - requests==2.34.2
       - torch-fidelity==0.3.0
       - setuptools==80.10.2
+      - torch-dct==0.1.6
       - -e .

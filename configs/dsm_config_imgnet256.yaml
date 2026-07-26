@@ -1,0 +1,98 @@
+model:
+    base_learning_rate: 4.5e-6
+    target: models.vae.AutoencoderKL
+    params:
+        embed_dim: 4
+        p_prior: 0.5  # probability of DSM regularization
+        p_prior_s: 0.0  # probability of image-space low-resolution prior
+        blk_sz: 8  # DSM blck size
+        lossconfig:
+            disc_start: 0
+            kl_weight: 0.000001
+            disc_weight: 0.5
+        ddconfig:
+            double_z: true
+            z_channels: 4
+            resolution: 256
+            in_channels: 3
+            out_ch: 3
+            ch: 128
+            ch_mult: [1, 2, 4, 4]
+            num_res_blocks: 2
+            attn_resolutions: []
+            dropout: 0.0
+
+data:
+    train:
+        target: data.datasets.DatasetTrain
+        params:
+            train_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train"
+            dataset_name: imagenet
+            size: 256
+            degradation: pil_nearest
+    validation:
+        target: data.datasets.DatasetVal
+        params:
+            val_dir: "/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val"
+            dataset_name: imagenet
+            size: 256
+            degradation: pil_nearest
+            eval_preprocessing: true
+
+pytorch_training:
+    device: "cuda:0"
+    seed: 23
+    deterministic: false
+    benchmark: true
+    max_batches: null
+    scale_learning_rate: true
+    accumulate_grad_batches: 1
+
+    distributed:
+        backend: "nccl"
+        find_unused_parameters: true
+        broadcast_buffers: false
+
+    dataloader:
+        num_workers: 8
+        shuffle: true
+        drop_last: true
+        pin_memory: true
+
+    optimizer:
+        betas: [0.5, 0.9]
+        zero_grad_set_to_none: true
+
+    validation:
+        enabled: true
+        eval_interval_steps: 2000
+        run_at_end: false
+        log_filename: "eval.log"
+        dataloader:
+            num_workers: 8
+            shuffle: false
+            drop_last: false
+            pin_memory: true
+
+    checkpoint:
+        resume_optimizer: true
+        strict_model_load: false
+        directory: "checkpoints"
+        monitor: "val/fid"
+        mode: "min"
+        save_top_k: 5
+        save_last: true
+        filename_pattern: "{local_step}.ckpt"
+
+    logging:
+        progress_refresh_steps: 100
+        validation_images: true
+        print_parameter_norms: false
+
+    comparison:
+        parameter_names:
+            - "encoder.conv_in.weight"
+            - "decoder.conv_out.weight"
+            - "quant_conv.weight"
+            - "post_quant_conv.weight"
+            - "loss.discriminator.main.0.weight"
