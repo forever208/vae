@@ -108,10 +108,14 @@ class _BaseImageDataset(Dataset):
         if image.mode != "RGB":
             image = image.convert("RGB")
         image = np.array(image).astype(np.uint8)
+
+        # Training preprocessing: sample a square crop whose side length is a
+        # random fraction [0.5, 1.0] of the image's shorter side, then resize it to the
+        # configured model input size. Random crop size and position provide
+        # scale and spatial data augmentation.
         min_side_len = min(image.shape[:2])
         crop_side_len = int(
-            min_side_len
-            * np.random.uniform(self.min_crop_f, self.max_crop_f, size=None)
+            min_side_len * np.random.uniform(self.min_crop_f, self.max_crop_f, size=None)
         )
         crop = (
             albumentations.CenterCrop(height=crop_side_len, width=crop_side_len)
@@ -120,6 +124,10 @@ class _BaseImageDataset(Dataset):
         )
         image = crop(image=image)["image"]
         image = self.image_rescaler(image=image)["image"]
+
+        # Build the optional low-resolution counterpart using the configured
+        # degradation method. Both images are normalized from [0, 255] to
+        # [-1, 1] and returned in HWC layout.
         if self.pil_interpolation:
             low_resolution = np.array(
                 self.degradation_process(PIL.Image.fromarray(image))
@@ -158,6 +166,10 @@ class DatasetVal(_BaseImageDataset):
             min_crop_f, max_crop_f, random_crop,
         )
         self.eval_preprocessing = eval_preprocessing
+
+        # Evaluation preprocessing is deterministic: resize the shorter side
+        # to `size`, take a centered square crop, and normalize [0, 1] values
+        # to the model's expected [-1, 1] range.
         self.eval_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Resize(size),
@@ -173,6 +185,10 @@ class DatasetVal(_BaseImageDataset):
         if image.mode != "RGB":
             image = image.convert("RGB")
         image = self.eval_transform(image)
+
+        # Keep validation inputs consistent with the training sample format:
+        # create the nearest-neighbor low-resolution image and return both
+        # tensors as float32 arrays in HWC layout.
         low_resolution = TF.resize(
             image,
             [self.LR_size, self.LR_size],
