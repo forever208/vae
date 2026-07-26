@@ -125,7 +125,10 @@ class CheckpointManager:
             "path": str(
                 self.directory
                 / self.filename_pattern.format(
-                    global_step=global_step, epoch=epoch, score=score
+                    global_step=global_step,
+                    local_step=local_step,
+                    epoch=epoch,
+                    score=score,
                 )
             ),
         }

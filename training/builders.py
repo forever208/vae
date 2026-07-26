@@ -6,24 +6,20 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 from core.config import instantiate_from_config
+from models.vae import AutoencoderKL
 
 
 def calculate_learning_rate(config, world_size):
     base_lr = float(config.model.base_learning_rate)
     training = config.pytorch_training
+
     if not training.scale_learning_rate:
         return base_lr
-    return (
-        base_lr
-        * int(config.data.batch_size)
-        * world_size
-        * int(training.accumulate_grad_batches)
-    )
+
+    return (base_lr * int(config.data.batch_size) * world_size * int(training.accumulate_grad_batches))
 
 
-def build_loader(
-    dataset_config, config, distributed_context, dataloader_config, shuffle
-):
+def build_loader(dataset_config, config, distributed_context, dataloader_config, shuffle):
     dataset = instantiate_from_config(dataset_config)
     sampler = (
         DistributedSampler(
@@ -74,28 +70,41 @@ class DistributedTrainStep(torch.nn.Module):
         self.autoencoder = autoencoder
 
     def forward(self, batch, optimizer_index, global_step):
-        return self.autoencoder.compute_train_loss(
-            batch, optimizer_index, global_step
-        )
+        return self.autoencoder.compute_train_loss(batch, optimizer_index, global_step)
+
+
+def build_optimizers(autoencoder, learning_rate, betas=(0.5, 0.9)):
+    ae_parameters = list(autoencoder.encoder.parameters()) + list(autoencoder.decoder.parameters())
+    ae_parameters += list(autoencoder.quant_conv.parameters())
+    ae_parameters += list(autoencoder.post_quant_conv.parameters())
+    opt_ae = torch.optim.Adam(ae_parameters, lr=learning_rate, betas=betas)
+    opt_disc = torch.optim.Adam(
+        autoencoder.loss.discriminator.parameters(),
+        lr=learning_rate,
+        betas=betas,
+    )
+    return opt_ae, opt_disc
 
 
 def build_model_and_optimizers(config, device, distributed_context):
     training = config.pytorch_training
-    autoencoder = instantiate_from_config(config.model).to(device)
+    autoencoder = AutoencoderKL(**config.model.params).to(device)
     learning_rate = calculate_learning_rate(config, distributed_context.world_size)
-    optimizers = autoencoder.build_optimizers(
+    optimizers = build_optimizers(
+        autoencoder,
         learning_rate,
         betas=tuple(float(beta) for beta in training.optimizer.betas),
     )
+
+    # DDP wrapper for training
     train_model = DistributedTrainStep(autoencoder).to(device)
+
     if distributed_context.distributed:
         train_model = DDP(
             train_model,
             device_ids=[distributed_context.local_rank],
             output_device=distributed_context.local_rank,
-            find_unused_parameters=bool(
-                training.distributed.find_unused_parameters
-            ),
+            find_unused_parameters=bool(training.distributed.find_unused_parameters),
             broadcast_buffers=bool(training.distributed.broadcast_buffers),
         )
     return autoencoder, train_model, optimizers, learning_rate

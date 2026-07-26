@@ -37,7 +37,6 @@ class DistributedContext:
 
     def close(self):
         if self.distributed:
-            dist.barrier()
             dist.destroy_process_group()
 
 

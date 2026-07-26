@@ -1,7 +1,6 @@
 """Scalar, evaluation, progress, and reconstruction image logging."""
 
 import datetime
-import json
 from pathlib import Path
 
 import numpy as np
@@ -23,9 +22,7 @@ def to_scalars(values):
 def parameter_norms(model, names):
     parameters = dict(model.named_parameters())
     return {
-        f"parameter_norm/{name}": float(
-            parameters[name].detach().float().norm().cpu()
-        )
+        f"parameter_norm/{name}": float(parameters[name].detach().float().norm().cpu())
         for name in names
     }
 
@@ -48,16 +45,8 @@ def build_train_metrics(
     metrics.update(to_scalars(ae_logs))
     metrics.update(to_scalars(disc_logs))
     if training.logging.print_parameter_norms:
-        metrics.update(
-            parameter_norms(model, training.comparison.parameter_names)
-        )
+        metrics.update(parameter_norms(model, training.comparison.parameter_names))
     return metrics
-
-
-def write_json_line(path, values):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as output:
-        output.write(json.dumps(values, sort_keys=True) + "\n")
 
 
 def progress_values(metrics, optimizers):
@@ -66,10 +55,10 @@ def progress_values(metrics, optimizers):
         "gstep": metrics["global_step"],
         "lr": f"{optimizers[0].param_groups[0]['lr']:.2g}",
         "ae": f"{metrics['train/ae_loss']:.3g}",
-        "rec": f"{metrics['train/weighted_pixel_loss']:.3g}",
-        "lpips": f"{metrics['train/weighted_lpips_loss']:.3g}",
-        "gan": f"{metrics['train/weighted_g_loss']:.3g}",
-        "kl": f"{metrics['train/weighted_kl_loss']:.3g}",
+        "rec": f"{metrics['train/pixel_loss']:.3g}",
+        "lpips": f"{metrics['train/lpips_loss']:.3g}",
+        "gan": f"{metrics['train/g_loss']:.3g}",
+        "kl": f"{metrics['train/kl_loss']:.3g}",
     }
 
 

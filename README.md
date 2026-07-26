@@ -156,7 +156,6 @@ outputs:
 ```text
 <output_dir>/
 ├── resolved_config.yaml
-├── train_metrics.jsonl
 ├── eval.log
 ├── <local_step>.png
 └── checkpoints/

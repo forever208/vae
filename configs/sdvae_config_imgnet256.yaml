@@ -5,14 +5,12 @@ model:
         embed_dim: 4
         anisotropic: false
         uniform_sample_scale: true
-        p_prior: 0.0
-        p_prior_s: 0.0
+        p_prior: 0.0  # 0.5 for EQ-VAE
+        p_prior_s: 0.0  # 0.25 for EQ-VAE
         lossconfig:
-            target: losses.vae_loss.LPIPSWithDiscriminator
-            params:
-                disc_start: 0
-                kl_weight: 0.000001
-                disc_weight: 0.5
+            disc_start: 0
+            kl_weight: 0.000001
+            disc_weight: 0.5
         ddconfig:
             double_z: true
             z_channels: 4
@@ -26,7 +24,6 @@ model:
             dropout: 0.0
 
 data:
-    batch_size: 20
     train:
         target: data.datasets.DatasetTrain
         params:
@@ -48,7 +45,6 @@ pytorch_training:
     seed: 23
     deterministic: false
     benchmark: true
-    max_epochs: 1000
     max_batches: null
     scale_learning_rate: true
     accumulate_grad_batches: 1
@@ -70,7 +66,7 @@ pytorch_training:
 
     validation:
         enabled: true
-        interval_local_steps: 2000
+        eval_interval_steps: 2000
         run_at_end: false
         log_filename: "eval.log"
         dataloader:
@@ -80,22 +76,17 @@ pytorch_training:
             pin_memory: true
 
     checkpoint:
-        resume_path: "pretrained_models/model.ckpt"
         resume_optimizer: true
         strict_model_load: false
-        output_dir: "/home/ningmang/eqvae/exps/imagenet256_SDVAE_torch"
         directory: "checkpoints"
         monitor: "val/fid"
         mode: "min"
         save_top_k: 5
         save_last: true
-        filename_pattern: "step_{global_step:09d}.pt"
+        filename_pattern: "{local_step}.ckpt"
 
     logging:
-        log_every_n_steps: 100
         progress_refresh_steps: 100
-        metrics_filename: "train_metrics.jsonl"
-        overwrite_metrics_file: false
         validation_images: true
         print_parameter_norms: false
 

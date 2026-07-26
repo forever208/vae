@@ -4,7 +4,7 @@ import random
 import torch
 import torch.nn.functional as F
 
-from core.config import instantiate_from_config
+from losses.vae_loss import LPIPSWithDiscriminator
 from models.backbone import Decoder, Encoder
 from models.distributions import DiagonalGaussianDistribution
 
@@ -20,7 +20,7 @@ class AutoencoderKL(torch.nn.Module):
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
-        self.loss = instantiate_from_config(lossconfig)
+        self.loss = LPIPSWithDiscriminator(**lossconfig)
         self.uniform_sample_scale = uniform_sample_scale
         self.anisotropic = anisotropic
         self.p_prior = p_prior
@@ -68,16 +68,16 @@ class AutoencoderKL(torch.nn.Module):
             z = torch.rot90(z, k=angle, dims=[-1, -2])
         return self.decode(z), posterior, z
 
-    def get_input(self, batch, key):
+    def prepare_batch_input(self, batch, key):
         x = batch[key]
         if len(x.shape) == 3:
             x = x[..., None]
-        return x.permute(0, 3, 1, 2).to(
-            memory_format=torch.contiguous_format
-        ).float()
+        return x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
 
     def _training_forward(self, batch):
-        inputs = self.get_input(batch, self.image_key)
+        inputs = self.prepare_batch_input(batch, self.image_key)
+
+        # EQ-VAE
         if random.random() < self.p_prior:
             mode = "latent"
             if self.anisotropic:
@@ -86,20 +86,19 @@ class AutoencoderKL(torch.nn.Module):
                 scale = random.choice([s / 32 for s in range(8, 32)])
             angle = random.choice([1, 2, 3])
             reconstructions, posterior, _ = self(inputs, scale=scale, angle=angle)
-            inputs = F.interpolate(
-                inputs, scale_factor=scale, mode="bilinear", align_corners=False,
-            )
+            inputs = F.interpolate(inputs, scale_factor=scale, mode="bilinear", align_corners=False,)
             inputs = torch.rot90(inputs, k=angle, dims=[-1, -2])
+        
+        # SDVAE
         else:
             mode = "image"
             if random.random() < self.p_prior_s:
                 scale = random.choice([s / 32 for s in range(8, 32)])
-                inputs = F.interpolate(
-                    inputs, scale_factor=scale, mode="bilinear", align_corners=False,
-                )
+                inputs = F.interpolate(inputs, scale_factor=scale, mode="bilinear", align_corners=False)
             else:
                 scale = 1
             reconstructions, posterior, _ = self(inputs)
+            
         return inputs, reconstructions, posterior, scale, mode
 
     def compute_train_loss(self, batch, optimizer_idx, global_step):
@@ -116,19 +115,9 @@ class AutoencoderKL(torch.nn.Module):
 
     @torch.no_grad()
     def compute_validation_outputs(self, batch):
-        inputs = self.get_input(batch, self.image_key)
+        inputs = self.prepare_batch_input(batch, self.image_key)
         reconstructions, _, _ = self(inputs)
         return {"inputs": inputs.detach(), "reconstructions": reconstructions.detach()}
-
-    def build_optimizers(self, learning_rate, betas=(0.5, 0.9)):
-        ae_parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
-        ae_parameters += list(self.quant_conv.parameters())
-        ae_parameters += list(self.post_quant_conv.parameters())
-        opt_ae = torch.optim.Adam(ae_parameters, lr=learning_rate, betas=betas)
-        opt_disc = torch.optim.Adam(
-            self.loss.discriminator.parameters(), lr=learning_rate, betas=betas,
-        )
-        return opt_ae, opt_disc
 
     def get_last_layer(self):
         return self.decoder.conv_out.weight
@@ -136,7 +125,7 @@ class AutoencoderKL(torch.nn.Module):
     @torch.no_grad()
     def log_images(self, batch, only_inputs=False, **kwargs):
         log = {}
-        x = self.get_input(batch, self.image_key).to(next(self.parameters()).device)
+        x = self.prepare_batch_input(batch, self.image_key).to(next(self.parameters()).device)
         if not only_inputs:
             if random.random() < 0.5:
                 xrec, posterior, _ = self(x)
