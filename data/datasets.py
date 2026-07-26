@@ -46,7 +46,7 @@ class _BaseImageDataset(Dataset):
         self, root_dir, dataset_name, size, degradation, downscale_f,
         min_crop_f, max_crop_f, random_crop,
     ):
-        if dataset_name == "openimages":
+        if dataset_name in {"openimages", "celeba256"}:
             rel_paths = _list_image_paths(root_dir)
         elif dataset_name == "imagenet":
             rel_paths = _list_image_paths(root_dir, recursive=True)
@@ -72,9 +72,7 @@ class _BaseImageDataset(Dataset):
         if degradation == "bsrgan":
             self.degradation_process = partial(degradation_fn_bsr, sf=downscale_f)
         elif degradation == "bsrgan_light":
-            self.degradation_process = partial(
-                degradation_fn_bsr_light, sf=downscale_f,
-            )
+            self.degradation_process = partial(degradation_fn_bsr_light, sf=downscale_f,)
         else:
             interpolation_fn = {
                 "cv_nearest": cv2.INTER_NEAREST,
@@ -129,9 +127,7 @@ class _BaseImageDataset(Dataset):
         # degradation method. Both images are normalized from [0, 255] to
         # [-1, 1] and returned in HWC layout.
         if self.pil_interpolation:
-            low_resolution = np.array(
-                self.degradation_process(PIL.Image.fromarray(image))
-            ).astype(np.uint8)
+            low_resolution = np.array(self.degradation_process(PIL.Image.fromarray(image))).astype(np.uint8)
         else:
             low_resolution = self.degradation_process(image=image)["image"]
         example["image"] = (image / 127.5 - 1.0).astype(np.float32)
@@ -159,12 +155,14 @@ class DatasetVal(_BaseImageDataset):
         self, val_dir="/data/openimages/target_dir/validation/",
         dataset_name="openimages", size=None, degradation=None, downscale_f=4,
         min_crop_f=0.5, max_crop_f=1.0, random_crop=True,
-        eval_preprocessing=False,
+        eval_preprocessing=False, min_eval_samples=50000,
     ):
         self._initialize(
             val_dir, dataset_name, size, degradation, downscale_f,
             min_crop_f, max_crop_f, random_crop,
         )
+        self.source_length = self.length
+        self.length = max(self.source_length, int(min_eval_samples))
         self.eval_preprocessing = eval_preprocessing
 
         # Evaluation preprocessing is deterministic: resize the shorter side
@@ -178,6 +176,9 @@ class DatasetVal(_BaseImageDataset):
         ])
 
     def __getitem__(self, index):
+        # Repeat images deterministically when the validation set contains
+        # fewer than the requested number of evaluation samples.
+        index %= self.source_length
         if not self.eval_preprocessing:
             return self._load_and_crop(index)
         example = {key: self.labels[key][index] for key in self.labels}

@@ -83,6 +83,7 @@ def main():
         accumulation = int(training.accumulate_grad_batches)
         last_epoch = start_epoch
         validation_interval = int(training.validation.eval_interval_steps)
+        progress_refresh_steps = int(training.logging.progress_refresh_steps)
         next_validation_local_step = ((local_step // validation_interval) + 1) * validation_interval
         checkpoint_manager = CheckpointManager(config, resume_state.get("topk")) if distributed_context.is_main else None
         validation_metrics = ReconstructionMetrics(device) if training.validation.enabled else None
@@ -96,8 +97,8 @@ def main():
             remaining = len(train_loader) if max_batches is None else min(len(train_loader), max_batches - local_step)
             progress = tqdm(
                 total=remaining, desc="train", dynamic_ncols=True, file=sys.stdout,
-                disable=not distributed_context.is_main, mininterval=0, maxinterval=float("inf"),
-                miniters=int(training.logging.progress_refresh_steps),
+                disable=not distributed_context.is_main, mininterval=float("inf"),
+                maxinterval=float("inf"), miniters=1, delay=float("inf"),
             )
             for batch_index, batch in enumerate(train_loader):
                 if max_batches is not None and local_step >= max_batches:
@@ -125,6 +126,8 @@ def main():
                     )
                     progress.set_postfix(progress_values(values, optimizers), refresh=False)
                     progress.update(1)
+                    if local_step % progress_refresh_steps == 0:
+                        progress.refresh()
 
                 # Validate periodically and update ranked checkpoints.
                 if validation_metrics is not None and local_step >= next_validation_local_step:
