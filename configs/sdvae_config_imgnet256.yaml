@@ -11,6 +11,7 @@ model:
             disc_start: 0
             kl_weight: 0.000001
             disc_weight: 0.5
+            perceptual_weight: 1.0
         ddconfig:
             double_z: true
             z_channels: 4
