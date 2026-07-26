@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--output_dir", required=True, help="Directory for checkpoints, logs, and validation outputs")
     parser.add_argument("--resume_path", required=True, help="Checkpoint path to resume from; pass an empty string to disable")
     parser.add_argument("--batch_size", type=int, required=True, help="Per-device training batch size")
-    parser.add_argument("--max_epochs", type=int, required=True, help="Maximum number of training epochs")
+    parser.add_argument("--max_train_steps", type=int, required=True, help="Maximum number of local training steps")
     parser.add_argument("--eval_interval_steps", type=int, required=True, help="Validation interval in local training steps")
     return parser.parse_args()
 
@@ -34,7 +34,7 @@ def main():
     config.pytorch_training.checkpoint.output_dir = args.output_dir
     config.pytorch_training.checkpoint.resume_path = args.resume_path
     config.data.batch_size = args.batch_size
-    config.pytorch_training.max_epochs = args.max_epochs
+    config.pytorch_training.max_train_steps = args.max_train_steps
     config.pytorch_training.validation.eval_interval_steps = args.eval_interval_steps
     training = config.pytorch_training
     # Initialize distributed execution, the compute device, and reproducibility.
@@ -79,7 +79,9 @@ def main():
         global_step = resume_state["global_step"]
         start_epoch = resume_state["epoch"]
         local_step = 0
+        max_train_steps = int(training.max_train_steps)
         max_batches = None if training.max_batches is None else int(training.max_batches)
+        step_limit = max_train_steps if max_batches is None else min(max_train_steps, max_batches)
         accumulation = int(training.accumulate_grad_batches)
         last_epoch = start_epoch
         validation_interval = int(training.validation.eval_interval_steps)
@@ -90,22 +92,23 @@ def main():
         train_model.train()
 
         # Update the autoencoder and discriminator with gradient accumulation.
-        for epoch in range(start_epoch, start_epoch + int(training.max_epochs)):
+        epoch = start_epoch
+        while local_step < step_limit:
             last_epoch = epoch
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
-            remaining = len(train_loader) if max_batches is None else min(len(train_loader), max_batches - local_step)
+            remaining = min(len(train_loader), step_limit - local_step)
             progress = tqdm(
                 total=remaining, desc="train", dynamic_ncols=True, file=sys.stdout,
                 disable=not distributed_context.is_main, mininterval=float("inf"),
                 maxinterval=float("inf"), miniters=1, delay=float("inf"),
             )
             for batch_index, batch in enumerate(train_loader):
-                if max_batches is not None and local_step >= max_batches:
+                if local_step >= step_limit:
                     break
                 batch = move_batch_to_device(batch, device)
                 should_step = (local_step + 1) % accumulation == 0 or (
-                    max_batches is not None and local_step + 1 == max_batches
+                    local_step + 1 == step_limit
                 )
                 ae_loss, ae_logs, ae_meta, global_step = optimizer_pass(
                     train_model, optimizers, batch, 0, global_step, local_step,
@@ -139,12 +142,11 @@ def main():
                         write_evaluation(eval_path, results, local_step, global_step)
                         checkpoint_manager.update(results, autoencoder, optimizers, global_step, epoch, local_step,)
                     next_validation_local_step += validation_interval
-                if max_batches is not None and local_step >= max_batches:
+                if local_step >= step_limit:
                     break
 
             progress.close()
-            if max_batches is not None and local_step >= max_batches:
-                break
+            epoch += 1
         
         # save most recent checkpoint
         if distributed_context.is_main:

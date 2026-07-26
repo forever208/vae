@@ -27,7 +27,7 @@ stage1_vae_trainer.py \
     --output_dir "$OUTPUT_DIR" \
     --resume_path "" \
     --batch_size 16 \
-    --max_epochs 1000 \
+    --max_train_steps 100001 \
     --eval_interval_steps 2000
 
 

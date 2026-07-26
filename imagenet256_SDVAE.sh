@@ -27,7 +27,7 @@ stage1_vae_trainer.py \
     --output_dir "$OUTPUT_DIR" \
     --resume_path pretrained_models/model.ckpt \
     --batch_size 20 \
-    --max_epochs 5 \
+    --max_train_steps 40001 \
     --eval_interval_steps 2000
 
 
