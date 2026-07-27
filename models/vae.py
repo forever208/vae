@@ -138,9 +138,10 @@ class AutoencoderKL(torch.nn.Module):
 
     def compute_train_loss(self, batch, optimizer_idx, global_step):
         inputs, reconstructions, posterior, scale, mode = self._training_forward(batch)
+        lpips_scale = 0.5 if mode == "dsm" else 1.0
         loss, log_dict = self.loss(
             inputs, reconstructions, posterior, optimizer_idx, global_step,
-            last_layer=self.get_last_layer(), split="train",
+            last_layer=self.get_last_layer(), split="train", lpips_scale=lpips_scale,
         )
         metadata = {
             "scale": torch.as_tensor(scale, device=inputs.device).float().mean(),

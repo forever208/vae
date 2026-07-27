@@ -93,4 +93,6 @@ def log_reconstruction_images(
     grid = torchvision.utils.make_grid(images, nrow=4)
     normalized = (grid + 1.0) / 2.0
     output_dir = Path(config.pytorch_training.checkpoint.output_dir)
-    save_image_grid(normalized, output_dir / f"{local_step}.png")
+    recon_dir = output_dir / "recon_imgs"
+    recon_dir.mkdir(parents=True, exist_ok=True)
+    save_image_grid(normalized, recon_dir / f"{local_step}.png")

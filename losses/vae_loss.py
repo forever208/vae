@@ -45,7 +45,7 @@ class LPIPSWithDiscriminator(nn.Module):
 
     def forward(
         self, inputs, reconstructions, posteriors, optimizer_idx, global_step,
-        last_layer=None, cond=None, split="train", weights=None,
+        last_layer=None, cond=None, split="train", weights=None, lpips_scale=1.0,
     ):
         # Combine pixel-space and perceptual reconstruction errors.
         pixel_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
@@ -59,7 +59,13 @@ class LPIPSWithDiscriminator(nn.Module):
         # logging reflects the values that actually enter the objective.
         inverse_variance = torch.exp(-self.logvar)
         pixel_nll = pixel_loss * inverse_variance + self.logvar
-        lpips_nll = (torch.ones_like(pixel_loss) * self.perceptual_weight * p_loss * inverse_variance)
+        lpips_nll = (
+            torch.ones_like(pixel_loss)
+            * self.perceptual_weight  # normally fixed at 1.0
+            * lpips_scale  # scale DSM LPIPS loss
+            * p_loss
+            * inverse_variance
+        )
         nll = pixel_nll + lpips_nll
         weighted_pixel_nll = weights * pixel_nll if weights is not None else pixel_nll
         weighted_lpips_nll = weights * lpips_nll if weights is not None else lpips_nll
