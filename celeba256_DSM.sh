@@ -28,7 +28,8 @@ stage1_vae_trainer.py \
     --resume_path "" \
     --batch_size 16 \
     --max_train_steps 100001 \
-    --eval_interval_steps 2000
+    --eval_interval_steps 2000 \
+    --save_top_k 10
 
 
 # nohup bash celeba256_DSM.sh > /dev/null 2>&1 &

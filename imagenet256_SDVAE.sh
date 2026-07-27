@@ -28,7 +28,8 @@ stage1_vae_trainer.py \
     --resume_path pretrained_models/model.ckpt \
     --batch_size 20 \
     --max_train_steps 40001 \
-    --eval_interval_steps 2000
+    --eval_interval_steps 2000 \
+    --save_top_k 10
 
 
 # nohup bash imagenet256_SDVAE.sh > /dev/null 2>&1 &

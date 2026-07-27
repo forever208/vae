@@ -81,7 +81,6 @@ pytorch_training:
         directory: "checkpoints"
         monitor: "val/fid"
         mode: "min"
-        save_top_k: 10
         save_last: true
         filename_pattern: "{local_step}.ckpt"
 

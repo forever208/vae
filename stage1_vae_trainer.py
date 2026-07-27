@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, required=True, help="Per-device training batch size")
     parser.add_argument("--max_train_steps", type=int, required=True, help="Maximum number of local training steps")
     parser.add_argument("--eval_interval_steps", type=int, required=True, help="Validation interval in local training steps")
+    parser.add_argument("--save_top_k", type=int, required=True, help="Number of best checkpoints to retain; negative keeps all")
     return parser.parse_args()
 
 
@@ -36,6 +37,7 @@ def main():
     config.data.batch_size = args.batch_size
     config.pytorch_training.max_train_steps = args.max_train_steps
     config.pytorch_training.validation.eval_interval_steps = args.eval_interval_steps
+    config.pytorch_training.checkpoint.save_top_k = args.save_top_k
     training = config.pytorch_training
     # Initialize distributed execution, the compute device, and reproducibility.
     distributed_context = DistributedContext(str(training.distributed.backend))
