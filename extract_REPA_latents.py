@@ -145,7 +145,7 @@ def load_encoder(config_path, checkpoint_path, device):
         raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint_path}")
 
     config = OmegaConf.load(config_path)
-    model = AutoencoderKL(**config.model.params)
+    model = AutoencoderKL(**config.model.params, encoder_only=True)
     try:
         checkpoint = torch.load(
             checkpoint_path, map_location="cpu", weights_only=False
@@ -171,10 +171,6 @@ def load_encoder(config_path, checkpoint_path, device):
         preview = ", ".join(required_missing[:10])
         raise RuntimeError(f"Checkpoint is missing encoder weights: {preview}")
 
-    # Only the encoder and quantization projection are needed for extraction.
-    model.decoder = None
-    model.post_quant_conv = None
-    model.loss = None
     return model.eval().requires_grad_(False).to(device)
 
 
@@ -456,11 +452,11 @@ if __name__ == "__main__":
 
 
 # get statis
-# torchrun --standalone --nproc_per_node=4 extract_REPA_latents.py \
+# torchrun --standalone --nproc_per_node=8 extract_REPA_latents.py \
 #   --task=stats \
-#   --source=/data/scratch/datasets/imagenet256/train \
+#   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
 #   --config=configs/sdvae_config_imgnet256.yaml \
-#   --checkpoint=exps/imagenet256_SDVAE_ft/checkpoints/4000.ckpt \
+#   --checkpoint=exps/imagenet256_SDVAE_ft/checkpoints/6000.ckpt \
 #   --batch-size=128 \
 #   --num-stat-samples=200000
 
@@ -468,9 +464,9 @@ if __name__ == "__main__":
 # extract latents
 # torchrun --standalone --nproc_per_node=4 extract_REPA_latents.py \
 #   --task=extract \
-#   --source=/data/scratch/datasets/imagenet256/train \
-#   --dest=/data/scratch/datasets/imagenet256_repa/vae-sd \
-#   --dest-images=/data/scratch/datasets/imagenet256_repa/images \
+#   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
+#   --dest=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_sdvae_6k/vae-sd \
+#   --dest-images=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_sdvae_6k/images \
 #   --config=configs/sdvae_config_imgnet256.yaml \
-#   --checkpoint=exps/imagenet256_SDVAE_ft/checkpoints/4000.ckpt \
+#   --checkpoint=exps/imagenet256_SDVAE_ft/checkpoints/6000.ckpt \
 #   --batch-size=128

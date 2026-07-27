@@ -20,14 +20,18 @@ class AutoencoderKL(torch.nn.Module):
         self, ddconfig, lossconfig, embed_dim, anisotropic=False,
         uniform_sample_scale=True, ckpt_path=None, p_prior=0.5, p_prior_s=0.25,
         blk_sz=8, ignore_keys=None, image_key="image", colorize_nlabels=None,
-        monitor=None,
+        monitor=None, encoder_only=False,
     ):
         super().__init__()
         ignore_keys = ignore_keys or []
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
-        self.decoder = Decoder(**ddconfig)
-        self.loss = LPIPSWithDiscriminator(**lossconfig)
+        if encoder_only:
+            self.decoder = None
+            self.loss = None
+        else:
+            self.decoder = Decoder(**ddconfig)
+            self.loss = LPIPSWithDiscriminator(**lossconfig)
         # Retain these arguments so historical EQ-VAE configs still load.
         del anisotropic, uniform_sample_scale
         self.p_prior = p_prior
@@ -35,7 +39,11 @@ class AutoencoderKL(torch.nn.Module):
         self.blk_sz = blk_sz
         assert ddconfig["double_z"]
         self.quant_conv = torch.nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
-        self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
+        self.post_quant_conv = (
+            None
+            if encoder_only
+            else torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
+        )
         self.embed_dim = embed_dim
         if colorize_nlabels is not None:
             assert isinstance(colorize_nlabels, int)
