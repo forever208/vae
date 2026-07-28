@@ -1,6 +1,6 @@
 model:
     base_learning_rate: 4.5e-6
-    target: models.vae.AutoencoderKL
+    target: models.eqvae.AutoencoderKL
     params:
         embed_dim: 4
         anisotropic: false

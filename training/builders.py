@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 from core.config import instantiate_from_config
-from models.vae import AutoencoderKL
 
 
 def calculate_learning_rate(config, world_size):
@@ -88,7 +87,7 @@ def build_optimizers(autoencoder, learning_rate, betas=(0.5, 0.9)):
 
 def build_model_and_optimizers(config, device, distributed_context):
     training = config.pytorch_training
-    autoencoder = AutoencoderKL(**config.model.params).to(device)
+    autoencoder = instantiate_from_config(config.model).to(device)
     learning_rate = calculate_learning_rate(config, distributed_context.world_size)
     optimizers = build_optimizers(
         autoencoder,

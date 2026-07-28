@@ -37,11 +37,19 @@ def build_train_metrics(
         "global_step": global_step,
         "train/ae_loss": float(ae_loss.detach().cpu()),
         "train/disc_loss": float(disc_loss.detach().cpu()),
-        "train/ae_scale": float(ae_meta["scale"].cpu()),
-        "train/ae_dsm": float(ae_meta["dsm"].cpu()),
-        "train/disc_scale": float(disc_meta["scale"].cpu()),
-        "train/disc_dsm": float(disc_meta["dsm"].cpu()),
     }
+    metrics.update(
+        {
+            f"train/ae_{name}": value
+            for name, value in to_scalars(ae_meta).items()
+        }
+    )
+    metrics.update(
+        {
+            f"train/disc_{name}": value
+            for name, value in to_scalars(disc_meta).items()
+        }
+    )
     metrics.update(to_scalars(ae_logs))
     metrics.update(to_scalars(disc_logs))
     if training.logging.print_parameter_norms:

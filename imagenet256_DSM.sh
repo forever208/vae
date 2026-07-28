@@ -29,7 +29,7 @@ stage1_vae_trainer.py \
     --batch_size 20 \
     --max_train_steps 40001 \
     --eval_interval_steps 2000 \
-    --save_top_k 10
+    --save_top_k 5
 
 
 # nohup bash imagenet256_DSM.sh > /dev/null 2>&1 &

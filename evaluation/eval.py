@@ -17,7 +17,7 @@ from torchvision.datasets import ImageFolder
 from torchvision import transforms
 import csv
 import sys
-from models.vae import AutoencoderKL
+from core.config import instantiate_from_config
 import yaml
 from omegaconf import OmegaConf
 
@@ -29,8 +29,11 @@ def load_config(config_path, display=False):
 
 
 def load_kl(config, type="sd", ckpt_path=None):
-    model = AutoencoderKL(**config.model.params)
-    sd = torch.load(ckpt_path, map_location="cpu")["state_dict"]
+    model = instantiate_from_config(config.model)
+    checkpoint = torch.load(ckpt_path, map_location="cpu")
+    sd = checkpoint.get("model", checkpoint.get("state_dict"))
+    if sd is None:
+        raise KeyError(f"Checkpoint {ckpt_path} has no model or state_dict entry")
     missing, unexpected = model.load_state_dict(sd, strict=False)
     return model.eval()
 
