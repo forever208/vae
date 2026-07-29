@@ -136,7 +136,7 @@ def check_image_branches():
 
 def check_config_target():
     root = Path(__file__).resolve().parents[1]
-    config = OmegaConf.load(root / "configs/eqvae_config_imgnet256.yaml")
+    config = OmegaConf.load(root / "configs/EQVAE_config_imgnet256.yaml")
     model_class = get_obj_from_str(config.model.target)
     assert model_class is AutoencoderKL
     assert issubclass(model_class, BaseAutoencoderKL)

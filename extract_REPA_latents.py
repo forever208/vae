@@ -22,7 +22,7 @@ from models.vae import AutoencoderKL
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_CONFIG = PROJECT_ROOT / "configs/sdvae_config_imgnet256.yaml"
+DEFAULT_CONFIG = PROJECT_ROOT / "configs/SDVAE_config_imgnet256.yaml"
 DEFAULT_CHECKPOINT = (
     PROJECT_ROOT / "exps/imagenet256_SDVAE_ft/checkpoints/4000.ckpt"
 )
@@ -455,7 +455,7 @@ if __name__ == "__main__":
 # torchrun --standalone --nproc_per_node=8 extract_REPA_latents.py \
 #   --task=stats \
 #   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
-#   --config=configs/sdvae_config_imgnet256.yaml \
+#   --config=configs/SDVAE_config_imgnet256.yaml \
 #   --checkpoint=exps/imagenet256_SDVAE_ft/checkpoints/6000.ckpt \
 #   --batch-size=128 \
 #   --num-stat-samples=200000
@@ -467,6 +467,6 @@ if __name__ == "__main__":
 #   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
 #   --dest=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_sdvae_6k/vae-sd \
 #   --dest-images=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_sdvae_6k/images \
-#   --config=configs/sdvae_config_imgnet256.yaml \
+#   --config=configs/SDVAE_config_imgnet256.yaml \
 #   --checkpoint=exps/imagenet256_SDVAE_ft/checkpoints/6000.ckpt \
 #   --batch-size=128
