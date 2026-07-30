@@ -1,6 +1,7 @@
 from .backbone import Decoder, Encoder
 from .distributions import DiagonalGaussianDistribution
 from .vae import AutoencoderKL, IdentityFirstStage
+from .vavae import AutoencoderKL as VAVAE
 
 __all__ = [
     "AutoencoderKL",
@@ -8,5 +9,6 @@ __all__ = [
     "DiagonalGaussianDistribution",
     "Encoder",
     "IdentityFirstStage",
+    "VAVAE",
 ]
 

@@ -18,7 +18,7 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
-from models.vae import AutoencoderKL
+from core.config import get_obj_from_str
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -145,7 +145,14 @@ def load_encoder(config_path, checkpoint_path, device):
         raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint_path}")
 
     config = OmegaConf.load(config_path)
-    model = AutoencoderKL(**config.model.params, encoder_only=True)
+    model_params = OmegaConf.to_container(
+        config.model.get("params", {}), resolve=True
+    ) or {}
+    model_params["encoder_only"] = True
+    if "inference_only" in model_params:
+        model_params["inference_only"] = False
+    model_class = get_obj_from_str(config.model.target)
+    model = model_class(**model_params)
     try:
         checkpoint = torch.load(
             checkpoint_path, map_location="cpu", weights_only=False

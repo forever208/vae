@@ -4,15 +4,8 @@ import random
 import torch
 import torch.nn.functional as F
 
-from losses.vae_loss import LPIPSWithDiscriminator
 from models.backbone import Decoder, Encoder
 from models.distributions import DiagonalGaussianDistribution
-from utils_DCT import (
-    combine_blocks_torch,
-    dct_2d_torch_unified,
-    idct_2d_torch_unified,
-    split_into_blocks_torch,
-)
 
 
 class AutoencoderKL(torch.nn.Module):
@@ -20,10 +13,13 @@ class AutoencoderKL(torch.nn.Module):
         self, ddconfig, lossconfig, embed_dim, anisotropic=False,
         uniform_sample_scale=True, ckpt_path=None, p_prior=0.5, p_prior_s=0.25,
         blk_sz=8, ignore_keys=None, image_key="image", colorize_nlabels=None,
-        monitor=None, encoder_only=False,
+        monitor=None, encoder_only=False, inference_only=False,
     ):
         super().__init__()
+        if encoder_only and inference_only:
+            raise ValueError("encoder_only and inference_only cannot both be enabled")
         ignore_keys = ignore_keys or []
+        self.inference_only = inference_only
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         if encoder_only:
@@ -31,7 +27,13 @@ class AutoencoderKL(torch.nn.Module):
             self.loss = None
         else:
             self.decoder = Decoder(**ddconfig)
-            self.loss = LPIPSWithDiscriminator(**lossconfig)
+            if inference_only:
+                self.loss = None
+            else:
+                # Keep inference imports independent of LPIPS/discriminator
+                # dependencies while preserving the original training path.
+                from losses.vae_loss import LPIPSWithDiscriminator
+                self.loss = LPIPSWithDiscriminator(**lossconfig)
         # Retain these arguments so historical EQ-VAE configs still load.
         del anisotropic, uniform_sample_scale
         self.p_prior = p_prior
@@ -82,6 +84,15 @@ class AutoencoderKL(torch.nn.Module):
 
     @staticmethod
     def _dsm_low_pass(x, dsm_mask, blk_sz):
+        # DCT is only needed by the DSM training branch. Importing lazily keeps
+        # inference-only and SD-VAE environments independent of torch_dct.
+        from utils_DCT import (
+            combine_blocks_torch,
+            dct_2d_torch_unified,
+            idct_2d_torch_unified,
+            split_into_blocks_torch,
+        )
+
         height, width = x.shape[-2:]
         if height % blk_sz != 0 or width % blk_sz != 0:
             raise ValueError(f"DSM block size {blk_sz} must divide spatial shape {height}x{width}")
@@ -100,10 +111,17 @@ class AutoencoderKL(torch.nn.Module):
         return combine_blocks_torch(blocks, height, width, blk_sz)
 
     def apply_dsm(self, inputs, latents, dsm_mask):
+        self._require_training_mode("apply_dsm")
         return (
             self._dsm_low_pass(inputs, dsm_mask, self.blk_sz),
             self._dsm_low_pass(latents, dsm_mask, self.blk_sz),
         )
+
+    def _require_training_mode(self, operation):
+        if getattr(self, "inference_only", False):
+            raise RuntimeError(
+                f"{operation} is unavailable when inference_only=True"
+            )
 
     def prepare_batch_input(self, batch, key):
         x = batch[key]
@@ -112,6 +130,7 @@ class AutoencoderKL(torch.nn.Module):
         return x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
 
     def _training_forward(self, batch):
+        self._require_training_mode("_training_forward")
         inputs = self.prepare_batch_input(batch, self.image_key)
 
         # DSM regularization
@@ -137,6 +156,7 @@ class AutoencoderKL(torch.nn.Module):
         return inputs, reconstructions, posterior, scale, mode
 
     def compute_train_loss(self, batch, optimizer_idx, global_step):
+        self._require_training_mode("compute_train_loss")
         inputs, reconstructions, posterior, scale, mode = self._training_forward(batch)
         lpips_scale = 0.5 if mode == "dsm" else 1.0
         loss, log_dict = self.loss(
