@@ -127,9 +127,19 @@ def reconstruct(model, images, sample_posterior):
     return model.decode(latents)
 
 
+def calculate_batch_psnr(real, fake):
+    """Return per-image PSNR for uint8 images, matching training validation."""
+    mse = (real.float() - fake.float()).pow(2).flatten(1).mean(1)
+    return 20.0 * torch.log10(
+        255.0 / torch.sqrt(mse.clamp_min(1e-12))
+    )
+
+
 @torch.inference_mode()
-def calculate_rfid_and_examples(model, loader, device, num_images, sample_posterior):
-    """Compute rFID exactly like training validation and retain examples for the grid."""
+def calculate_rfid_psnr_and_examples(
+    model, loader, device, num_images, sample_posterior
+):
+    """Compute validation rFID/PSNR and retain examples for the grid."""
     fid = FrechetInceptionDistance(
         feature=2048,
         reset_real_features=False,
@@ -139,8 +149,10 @@ def calculate_rfid_and_examples(model, loader, device, num_images, sample_poster
     example_inputs = []
     example_reconstructions = []
     collected = 0
+    psnr_sum = torch.zeros((), dtype=torch.float64, device=device)
+    sample_count = 0
 
-    for batch in tqdm(loader, desc="Computing rFID", dynamic_ncols=True):
+    for batch in tqdm(loader, desc="Computing rFID/PSNR", dynamic_ncols=True):
         images = batch["image"].permute(0, 3, 1, 2).contiguous()
         images = images.to(device, non_blocking=True)
         reconstructions = reconstruct(model, images, sample_posterior)
@@ -148,6 +160,9 @@ def calculate_rfid_and_examples(model, loader, device, num_images, sample_poster
         fake = torch.clamp(127.5 * reconstructions + 128.0, 0, 255).to(torch.uint8)
         fid.update(real, real=True)
         fid.update(fake, real=False)
+        psnr = calculate_batch_psnr(real, fake)
+        psnr_sum += psnr.double().sum()
+        sample_count += images.shape[0]
 
         if collected < num_images:
             keep = min(num_images - collected, images.shape[0])
@@ -159,7 +174,8 @@ def calculate_rfid_and_examples(model, loader, device, num_images, sample_poster
         raise ValueError(f"--num-images={num_images} exceeds dataset size {collected}")
     examples = torch.cat(example_inputs, dim=0)
     reconstructions = torch.cat(example_reconstructions, dim=0)
-    return float(fid.compute().cpu()), examples, reconstructions
+    mean_psnr = float((psnr_sum / sample_count).cpu())
+    return float(fid.compute().cpu()), mean_psnr, examples, reconstructions
 
 
 def parse_args():
@@ -224,7 +240,7 @@ def main():
     checkpoint = resolve_checkpoint(args.checkpoint, args.checkpoint_url)
     model = load_vae(args.config, checkpoint, device)
     loader = build_imagenet_loader(args.data_root, args.eval_batch_size, args.num_workers)
-    rfid, images, reconstructions = calculate_rfid_and_examples(
+    rfid, psnr, images, reconstructions = calculate_rfid_psnr_and_examples(
         model,
         loader,
         device,
@@ -232,6 +248,7 @@ def main():
         args.sample_posterior,
     )
     print(f"rFID: {rfid:.6f}")
+    print(f"PSNR: {psnr:.6f} dB")
 
     # Batch order plus nrow=N gives inputs on row 1 and reconstructions on row 2.
     comparison = torch.cat([images, reconstructions], dim=0)
