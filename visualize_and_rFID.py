@@ -1,4 +1,4 @@
-"""Visualize VA-VAE reconstructions and evaluate their ImageNet-256 rFID."""
+"""Visualize VAE reconstructions and evaluate their ImageNet-256 rFID."""
 
 import argparse
 import os
@@ -22,15 +22,20 @@ CHECKPOINT_URL = (
 )
 
 
-def download_checkpoint(url, destination):
+def resolve_checkpoint(destination, url=None):
     destination = Path(destination).expanduser()
     if destination.is_file():
-        print(f"Using cached checkpoint: {destination}")
+        print(f"Using checkpoint: {destination}")
         return destination
 
+    if url is None:
+        raise FileNotFoundError(
+            f"Checkpoint does not exist: {destination}. "
+            "Pass --checkpoint-url to download it explicitly."
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_suffix(destination.suffix + ".part")
-    print(f"Downloading VA-VAE checkpoint to {destination}")
+    print(f"Downloading checkpoint to {destination}")
     try:
         with requests.get(url, stream=True, timeout=(30, 120)) as response:
             response.raise_for_status()
@@ -61,14 +66,21 @@ def _checkpoint_state(checkpoint):
         state = checkpoint.get("state_dict", checkpoint)
     if not isinstance(state, dict):
         raise TypeError("Checkpoint does not contain a state dictionary")
-    if state and all(key.startswith("module.") for key in state):
-        state = {key.removeprefix("module."): value for key, value in state.items()}
+    state = {key.removeprefix("module."): value for key, value in state.items()}
     return state
 
 
-def load_vavae(config_path, checkpoint_path, device):
+def load_vae(config_path, checkpoint_path, device):
     config = OmegaConf.load(config_path)
-    model = instantiate_from_config(config.model)
+    model_config = OmegaConf.create(
+        OmegaConf.to_container(config.model, resolve=True)
+    )
+    if "params" not in model_config:
+        model_config.params = {}
+    # This in-memory override avoids constructing training-only losses. It
+    # does not modify the YAML or any model/training implementation.
+    model_config.params.inference_only = True
+    model = instantiate_from_config(model_config)
     try:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     except TypeError:
@@ -81,11 +93,11 @@ def load_vavae(config_path, checkpoint_path, device):
         "post_quant_conv.",
     )
     state = {key: value for key, value in state.items() if key.startswith(model_prefixes)}
-    incompatible = model.load_state_dict(state, strict=False)
-    if incompatible.missing_keys:
-        preview = ", ".join(incompatible.missing_keys[:10])
-        raise RuntimeError(f"Checkpoint is missing VA-VAE weights: {preview}")
-    print(f"Loaded VA-VAE ({sum(p.numel() for p in model.parameters()):,} parameters)")
+    model.load_state_dict(state, strict=True)
+    print(
+        f"Loaded {model_config.target} "
+        f"({sum(p.numel() for p in model.parameters()):,} parameters)"
+    )
     return model.eval().requires_grad_(False).to(device)
 
 
@@ -108,6 +120,14 @@ def build_imagenet_loader(data_root, batch_size, num_workers):
 
 
 @torch.inference_mode()
+def reconstruct(model, images, sample_posterior):
+    """Reconstruct through the encode/decode API shared by supported VAEs."""
+    posterior = model.encode(images)
+    latents = posterior.sample() if sample_posterior else posterior.mode()
+    return model.decode(latents)
+
+
+@torch.inference_mode()
 def calculate_rfid_and_examples(model, loader, device, num_images, sample_posterior):
     """Compute rFID exactly like training validation and retain examples for the grid."""
     fid = FrechetInceptionDistance(
@@ -123,7 +143,7 @@ def calculate_rfid_and_examples(model, loader, device, num_images, sample_poster
     for batch in tqdm(loader, desc="Computing rFID", dynamic_ncols=True):
         images = batch["image"].permute(0, 3, 1, 2).contiguous()
         images = images.to(device, non_blocking=True)
-        reconstructions = model.reconstruct(images, sample_posterior=sample_posterior)
+        reconstructions = reconstruct(model, images, sample_posterior)
         real = torch.clamp(127.5 * images + 128.0, 0, 255).to(torch.uint8)
         fake = torch.clamp(127.5 * reconstructions + 128.0, 0, 255).to(torch.uint8)
         fid.update(real, real=True)
@@ -144,7 +164,7 @@ def calculate_rfid_and_examples(model, loader, device, num_images, sample_poster
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Evaluate VA-VAE rFID and save a two-row input/reconstruction grid."
+        description="Evaluate VAE rFID and save a two-row input/reconstruction grid."
     )
     parser.add_argument(
         "--data-root",
@@ -155,13 +175,20 @@ def parse_args():
         "--config",
         type=Path,
         required=True,
-        help="Path to the VA-VAE YAML configuration",
+        help="Path to the VAE YAML configuration",
     )
     parser.add_argument(
         "--checkpoint",
         type=Path,
         required=True,
         help="Checkpoint path",
+    )
+    parser.add_argument(
+        "--checkpoint-url",
+        help=(
+            "Optional URL used only when --checkpoint does not exist. "
+            f"Released VA-VAE URL: {CHECKPOINT_URL}"
+        ),
     )
     parser.add_argument("--output", type=Path, default=Path("vavae_reconstructions.png"))
     parser.add_argument("--num-images", type=int, default=4)
@@ -194,8 +221,8 @@ def main():
         raise ValueError("--eval-batch-size must be positive")
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
-    checkpoint = download_checkpoint(CHECKPOINT_URL, args.checkpoint)
-    model = load_vavae(args.config, checkpoint, device)
+    checkpoint = resolve_checkpoint(args.checkpoint, args.checkpoint_url)
+    model = load_vae(args.config, checkpoint, device)
     loader = build_imagenet_loader(args.data_root, args.eval_batch_size, args.num_workers)
     rfid, images, reconstructions = calculate_rfid_and_examples(
         model,
@@ -219,10 +246,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# python visualize_vavae_reconstructions.py \
-#   --config /home/ningmang/eqvae/configs/VAVAE_config_imgnet256.yaml \
-#   --checkpoint /home/ningmang/eqvae/exps/imagenet256_VAVAE/vavae-imagenet256-f16d32-dinov2.pt \
-#   --data-root /mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val \
-#   --output vavae_reconstructions.png
