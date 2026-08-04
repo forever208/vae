@@ -23,7 +23,7 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 torchrun --standalone --nproc_per_node=8 --master_port=29507 \
 stage1_vae_trainer.py \
-    --config configs/sdvae_config_imgnet256.yaml \
+    --config configs/SDVAE_config_imgnet256.yaml \
     --output_dir "$OUTPUT_DIR" \
     --resume_path pretrained_models/model.ckpt \
     --batch_size 20 \

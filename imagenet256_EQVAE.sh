@@ -7,7 +7,7 @@ conda activate eqvae_train
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUTPUT_DIR="$SCRIPT_DIR/exps/imagenet256_EQVAE_ft"
+OUTPUT_DIR="$SCRIPT_DIR/exps/imagenet256_EQVAE_ft_test"
 LOG_DIR="$OUTPUT_DIR/logs/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_DIR/stdout.log") 2> >(tee -a "$LOG_DIR/stderr.log" >&2)
@@ -23,13 +23,13 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 torchrun --standalone --nproc_per_node=8 --master_port=29507 \
 stage1_vae_trainer.py \
-    --config configs/eqvae_config_imgnet256.yaml \
+    --config configs/EQVAE_config_imgnet256.yaml \
     --output_dir "$OUTPUT_DIR" \
     --resume_path pretrained_models/model.ckpt \
     --batch_size 20 \
     --max_train_steps 40001 \
     --eval_interval_steps 2000 \
-    --save_top_k 10
+    --save_top_k 5
 
 
 # nohup bash imagenet256_EQVAE.sh > /dev/null 2>&1 &

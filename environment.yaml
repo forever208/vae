@@ -1,4 +1,4 @@
-name: eqvae_train
+name: vae
 channels:
   - conda-forge
   - nodefaults

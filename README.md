@@ -11,7 +11,7 @@ installs the local project in editable mode:
 
 ```bash
 conda env create -f environment.yaml
-conda activate eqvae_train
+conda activate vae
 ```
 
 The small `taming-transformers` subset needed by LPIPS and PatchGAN is already
@@ -82,7 +82,7 @@ the training loop.
 From the repository root:
 
 ```bash
-conda activate eqvae_train
+conda activate vae
 CUDA_VISIBLE_DEVICES=0 python stage1_vae_trainer.py \
   --config configs/eqvae_config.yaml
 ```
