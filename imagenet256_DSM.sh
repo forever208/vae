@@ -7,7 +7,7 @@ conda activate eqvae_train
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUTPUT_DIR="$SCRIPT_DIR/exps/imagenet256_DSM_ft_02lpips"
+OUTPUT_DIR="$SCRIPT_DIR/exps/imagenet256_DSMp03_ft_05lpips_10epochs"
 LOG_DIR="$OUTPUT_DIR/logs/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_DIR/stdout.log") 2> >(tee -a "$LOG_DIR/stderr.log" >&2)
@@ -27,11 +27,11 @@ stage1_vae_trainer.py \
     --output_dir "$OUTPUT_DIR" \
     --resume_path pretrained_models/model.ckpt \
     --batch_size 20 \
-    --max_train_steps 40001 \
+    --max_train_steps 80001 \
     --eval_interval_steps 2000 \
     --save_top_k 5
 
 
 # nohup bash imagenet256_DSM.sh > /dev/null 2>&1 &
 # pkill -TERM -f stage1_vae_trainer.py
-# sslaunch-noproxy submit -j 02lpips -c zhongwei -q stream -n 1 --no-log -- bash imagenet256_DSM.sh
+# sslaunch-noproxy submit -j dsmp03 -c zhongwei -q stream -n 1 --no-log -- bash imagenet256_DSM.sh

@@ -10,7 +10,7 @@ torchrun --standalone --nproc_per_node=4 extract_REPA_latents.py \
   --task=stats \
   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
   --config=configs/DSM_config_imgnet256.yaml \
-  --checkpoint=/home/ningmang/vae/exps/imagenet256_DSM_ft_02lpips/checkpoints/40000.ckpt \
+  --checkpoint=/home/ningmang/vae/exps/imagenet256_DSMp07_ft_05lpips_10epochs/checkpoints/72000.ckpt \
   --batch-size=128 \
   --num-stat-samples=200000
 
@@ -20,16 +20,16 @@ torchrun --standalone --nproc_per_node=4 extract_REPA_latents.py \
 # torchrun --standalone --nproc_per_node=8 extract_REPA_latents.py \
 #   --task=extract \
 #   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
-#   --dest=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_DSM_02lpips_40k/vae-sd \
-#   --dest-images=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_DSM_02lpips_40k/images \
+#   --dest=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_DSM_prob07_05lpips_72k/vae-sd \
+#   --dest-images=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256_DSM_prob07_05lpips_72k/images \
 #   --config=configs/DSM_config_imgnet256.yaml \
-#   --checkpoint=/home/ningmang/vae/exps/imagenet256_DSM_ft_02lpips/checkpoints/40000.ckpt \
+#   --checkpoint=/home/ningmang/vae/exps/imagenet256_DSMp07_ft_05lpips_10epochs/checkpoints/72000.ckpt \
 #   --batch-size=128
 
 
 # sslaunch submit -j ningmang -n 1 -c zhongwei -q stream -- sleep infinity
 # kubectl --kubeconfig /mnt/vepfs/base/infra/.kube/zhongweiconfig \
-# -n default exec -it ningmang-ningmang-n1-260812145025-master-0 -- bash
+# -n default exec -it ningmang-ningmang-n1-260814094043-master-0 -- bash
 # sudo chown -R ningmang:ningmang /home/ningmang/REPA
 # pkill -TERM -f extract_REPA_latents.py
 # bash extract_latents.sh
