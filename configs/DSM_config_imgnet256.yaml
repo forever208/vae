@@ -3,7 +3,7 @@ model:
     target: models.vae.AutoencoderKL
     params:
         embed_dim: 4
-        p_prior: 0.5  # probability of DSM regularization
+        p_prior: 0.3  # probability of DSM regularization
         p_prior_s: 0.0  # probability of image-space low-resolution prior
         blk_sz: 8  # DSM blck size
         lossconfig:
