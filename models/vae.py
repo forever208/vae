@@ -12,8 +12,8 @@ class AutoencoderKL(torch.nn.Module):
     def __init__(
         self, ddconfig, lossconfig, embed_dim, anisotropic=False,
         uniform_sample_scale=True, ckpt_path=None, p_prior=0.5, p_prior_s=0.25,
-        blk_sz=8, ignore_keys=None, image_key="image", colorize_nlabels=None,
-        monitor=None, encoder_only=False, inference_only=False,
+        blk_sz=8, dsm_lpips_weight=1.0, ignore_keys=None, image_key="image",
+        colorize_nlabels=None, monitor=None, encoder_only=False, inference_only=False,
     ):
         super().__init__()
         if encoder_only and inference_only:
@@ -39,6 +39,7 @@ class AutoencoderKL(torch.nn.Module):
         self.p_prior = p_prior
         self.p_prior_s = p_prior_s
         self.blk_sz = blk_sz
+        self.dsm_lpips_weight = dsm_lpips_weight
         assert ddconfig["double_z"]
         self.quant_conv = torch.nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
         self.post_quant_conv = (
@@ -158,7 +159,7 @@ class AutoencoderKL(torch.nn.Module):
     def compute_train_loss(self, batch, optimizer_idx, global_step):
         self._require_training_mode("compute_train_loss")
         inputs, reconstructions, posterior, scale, mode = self._training_forward(batch)
-        lpips_scale = 0.5 if mode == "dsm" else 1.0
+        lpips_scale = self.dsm_lpips_weight if mode == "dsm" else 1.0
         loss, log_dict = self.loss(
             inputs, reconstructions, posterior, optimizer_idx, global_step,
             last_layer=self.get_last_layer(), split="train", lpips_scale=lpips_scale,

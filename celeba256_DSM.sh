@@ -7,7 +7,7 @@ conda activate eqvae_train
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUTPUT_DIR="$SCRIPT_DIR/exps/celeba256_DSM_05lpips_lowres025"
+OUTPUT_DIR="$SCRIPT_DIR/exps/celeba256_DSM_10lpips_lowres025"
 LOG_DIR="$OUTPUT_DIR/logs/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_DIR/stdout.log") 2> >(tee -a "$LOG_DIR/stderr.log" >&2)

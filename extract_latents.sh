@@ -7,7 +7,7 @@ conda activate eqvae_train
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUTPUT_DIR="$SCRIPT_DIR/exps/celeba256_SDVAE"
+OUTPUT_DIR="$SCRIPT_DIR/exps/celeba256_DSM_05lpips_lowres025"
 LOG_DIR="$OUTPUT_DIR/extract_logs/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_DIR/stdout.log") 2> >(tee -a "$LOG_DIR/stderr.log" >&2)
@@ -23,9 +23,9 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 
 torchrun --standalone --nproc_per_node=8 extract_latents.py \
   --source=/mnt/vepfs/base2/stream/ningmang/datasets/celeba256/celeba256 \
-  --dest=/mnt/vepfs/base2/stream/ningmang/datasets/celeba256_latents/SDVAE_98k \
-  --config=configs/SDVAE_config_celeba256.yaml \
-  --checkpoint=exps/celeba256_SDVAE/checkpoints/98000.ckpt \
+  --dest=/mnt/vepfs/base2/stream/ningmang/datasets/celeba256_latents/DSM_05lpips_lowres025_100k \
+  --config=configs/DSM_config_celeba256.yaml \
+  --checkpoint=exps/celeba256_DSM_05lpips_lowres025/checkpoints/100000.ckpt \
   --batch-size=100 \
   --num-workers=4 \
   --num-stat-samples=30000
