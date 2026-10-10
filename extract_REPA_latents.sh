@@ -7,8 +7,8 @@ conda activate vae
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUTPUT_DIR="/mnt/vepfs/base2/stream/ningmang/vae_exps/imagenet256_DSM_ft_05lpips_10epochs"
-CHECKPOINT="$OUTPUT_DIR/checkpoints/76000.ckpt"
+OUTPUT_DIR="/mnt/vepfs/base2/stream/ningmang/vae_exps/imagenet256_DSM_ft_05lpips"
+CHECKPOINT="$OUTPUT_DIR/checkpoints/40000.ckpt"
 CONFIG="$OUTPUT_DIR/resolved_config.yaml"
 LOG_DIR="$OUTPUT_DIR/extract_logs/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
@@ -27,8 +27,8 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 torchrun --nproc_per_node=8 extract_REPA_latents.py \
   --task=extract \
   --source=/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train \
-  --dest=/tmp/ningmang/imagenet256_DSM_ft_05lpips_10epochs_76k/vae-sd \
-  --dest-images=/tmp/ningmang/imagenet256_DSM_ft_05lpips_10epochs_76k/images \
+  --dest=/tmp/ningmang/imagenet256_DSM_ft_05lpips_40k/vae-sd \
+  --dest-images=/tmp/ningmang/imagenet256_DSM_ft_05lpips_40k/images \
   --config="$CONFIG" \
   --checkpoint="$CHECKPOINT" \
   --batch-size=128
