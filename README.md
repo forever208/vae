@@ -7,16 +7,7 @@ Superior Diffusability in Latent Diffusion](https://arxiv.org/abs/2603.14645)
 
 We use this repo to finetune official SDVAE on ImageNet 256x256. Of course, you can also use this repo to train multiple VAEs (SD-VAE, EQ-VAE, DSM) from scratch
 
-If you find this repo or our paper helpful, please cite by
 
-```bash
-@article{ning2026spectrum,
-  title={Spectrum matching: a unified perspective for superior diffusability in latent diffusion},
-  author={Ning, Mang and Li, Mingxiao and Zhang, Le and Liu, Lanmiao and Blaschko, Matthew B and Salah, Albert Ali and Ertugrul, Itir Onal},
-  journal={arXiv preprint arXiv:2603.14645},
-  year={2026}
-}
-```
 
 ## 1. Overview
 
@@ -231,4 +222,18 @@ torchrun --nproc_per_node=8 extract_REPA_latents.py \
   --checkpoint="$VAE_CHECKPOINT" \
   --batch-size=128 \
   --num-stat-samples=200000
+```
+
+
+## BibTeX
+
+If you find this repo or our paper helpful, please cite by
+
+```bibtex
+@article{ning2026spectrum,
+  title={Spectrum matching: a unified perspective for superior diffusability in latent diffusion},
+  author={Ning, Mang and Li, Mingxiao and Zhang, Le and Liu, Lanmiao and Blaschko, Matthew B and Salah, Albert Ali and Ertugrul, Itir Onal},
+  journal={arXiv preprint arXiv:2603.14645},
+  year={2026}
+}
 ```
