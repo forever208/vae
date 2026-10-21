@@ -4,3 +4,7 @@ __pycache__
 *.egg-info/
 *.ckpt
 *.pth
+
+# Keep local shell scripts out of Git, except the download helper.
+*.sh
+!/download_sdvae.sh
