@@ -20,9 +20,7 @@ If you find this repo or our paper helpful, please cite by
 
 ## 1. Overview
 
-This repository is a focused simplification of the official [SD-VAE / latent-diffusion code](https://github.com/CompVis/latent-diffusion), centered on VAE training and inference. 
-
-It supports **training and inference for SD-VAE, EQ-VAE, and DSM**, and **inference for VA-VAE**. Training uses a self-contained PyTorch loop with single-GPU and multi-GPU DistributedDataParallel
+This repo supports **training and inference for SD-VAE, EQ-VAE, and DSM**, and **inference for VA-VAE**. Training uses a self-contained PyTorch loop with single-GPU and multi-GPU DistributedDataParallel
 (DDP) support.
 
 
